@@ -1,5 +1,4 @@
 import time, random, json
-from OBU.main import OBU_ID
 
 def generate_bsm_payload(obu_id):
     """
@@ -42,10 +41,3 @@ def generate_bsm_payload(obu_id):
     }
     
     return bsm_data
-
-if __name__ == "__main__":
-    # 測試產生
-    payload = generate_bsm_payload(OBU_ID)
-    with open(f'OBU/payload/{OBU_ID}_payload.json', 'w') as f:
-        json.dump(payload, f, indent=2)
-    print(f"已生成 BSM Payload")

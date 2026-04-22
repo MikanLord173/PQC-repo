@@ -49,9 +49,16 @@ def receive_data(sock):
                     print(f"總耗時：{time.time() - payload['full_timestamp']} 秒")
                     print(f"\n完整訊息：")
                     for key, value in payload.items():
-                        print(f"{key}: {value}")
+                        if key == 'coreData':
+                            print(f"{key}: ", end="{\n")
+                            for sub_key, sub_value in value.items():
+                                print(f"  {sub_key}: {sub_value}")
+                            print("}")
+                        else:
+                            print(f"{key}: {value}")
+                    print()
                 else:
-                    print(f"[來自 {addr}] 驗證失敗，拒絕通行。")
+                    print(f"[來自 {addr}] 驗證失敗，拒絕通行。\n")
     except KeyboardInterrupt:
         print("\nRSU 已手動關閉")
     finally:

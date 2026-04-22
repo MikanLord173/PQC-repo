@@ -9,9 +9,9 @@ def setup(obu_id):
     # 準備 ECC 金鑰
     obu_ecc_priv = ec.generate_private_key(ec.SECP256R1())
     obu_ecc_pub_bytes = obu_ecc_priv.public_key().public_bytes(
-        encoding=serialization.Encoding.DER,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
 
     # 準備 PQC 金鑰 (ML-DSA-44)
     obu_pqc = oqs.Signature("ML-DSA-44")
@@ -23,7 +23,7 @@ def setup(obu_id):
 
     with open(f"OBU/keys/{obu_id}_ecc_priv.key", "wb") as f:
         f.write(obu_ecc_priv.private_bytes(
-            encoding=serialization.Encoding.PEM,
+            encoding=serialization.Encoding.DER,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption() # 專題演示建議先不加密
         ))
@@ -38,6 +38,10 @@ def setup(obu_id):
     if cert is not None:
         with open(f"OBU/cert/{obu_id}_cert.bin", "wb") as f:
             f.write(cert)
+    return cert
 
 if __name__ == "__main__":
-    setup(OBU_ID)
+    if setup(OBU_ID):
+        print(f"{OBU_ID} 的金鑰和憑證已成功生成！")
+    else:
+        print(f"{OBU_ID} 的金鑰和憑證生成失敗！")

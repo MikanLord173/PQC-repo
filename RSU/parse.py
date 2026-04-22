@@ -104,52 +104,55 @@ def verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content):
 
     # 驗證ECC
     try:
-        ca_ecc_pub = serialization.load_pem_public_key(open("RSU/keys/ca_ecc_pub.key", "rb").read())
+        with open("RSU/keys/ca_ecc_pub.key", "rb") as f:
+            ca_ecc_pub_data = f.read()
+        ca_ecc_pub = serialization.load_der_public_key(ca_ecc_pub_data)
         ca_ecc_pub.verify(ca_ecc_sig, tbs_content, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
-        print("ECC 簽章驗證成功")
+        print("CA ECC 簽章驗證成功")
         ecc_ok = True
     except Exception as e:
-        print(f"ECC 簽章驗證失敗：{e}")
-        print("混合簽章驗證失敗")
+        print(f"CA ECC 簽章驗證失敗：{e}")
+        print("CA 混合簽章驗證失敗")
         return False
 
     # 驗證PQC
     with oqs.Signature(PQC_SIG_NAME) as verifier:
-        ca_pqc_pub = verifier.import_public_key(open("RSU/keys/ca_pqc_pub.key", "rb").read())
+        with open("RSU/keys/ca_pqc_pub.key", "rb") as f:
+            ca_pqc_pub = f.read()  # PQC 公鑰直接讀取 bytes
         pqc_ok = verifier.verify(tbs_content, ca_pqc_sig, ca_pqc_pub)  # 使用 PQC 公鑰驗證 PQC 簽章
         if pqc_ok:
-            print("PQC 簽章驗證成功")
+            print("CA PQC 簽章驗證成功")
         else:
-            print("PQC 簽章驗證失敗")
+            print("CA PQC 簽章驗證失敗")
 
     if ecc_ok and pqc_ok:
-        print("混合簽章驗證成功")
+        print("CA 混合簽章驗證成功")
         return True
     else:
-        print("混合簽章驗證失敗")
+        print("CA 混合簽章驗證失敗")
         return False
 
 def verify_obu_sig(ecc_pub, pqc_pub, ecc_sig, pqc_sig, payload_bytes):
     # 驗證ECC
     try:
         ecc_pub.verify(ecc_sig, payload_bytes, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
-        print("ECC 簽章驗證成功")
+        print("OBU ECC 簽章驗證成功")
         ecc_ok = True
     except Exception as e:
-        print(f"ECC 簽章驗證失敗：{e}")
+        print(f"OBU ECC 簽章驗證失敗：{e}")
         ecc_ok = False
 
     # 驗證PQC
     with oqs.Signature(PQC_SIG_NAME) as verifier:
         pqc_ok = verifier.verify(payload_bytes, pqc_sig, pqc_pub)  # 使用 PQC 公鑰驗證 PQC 簽章
         if pqc_ok:
-            print("PQC 簽章驗證成功")
+            print("OBU PQC 簽章驗證成功")
         else:
-            print("PQC 簽章驗證失敗")
+            print("OBU PQC 簽章驗證失敗")
 
     if ecc_ok and pqc_ok:
-        print("混合簽章驗證成功")
+        print("OBU 混合簽章驗證成功")
         return True
     else:
-        print("混合簽章驗證失敗")
+        print("OBU 混合簽章驗證失敗")
         return False

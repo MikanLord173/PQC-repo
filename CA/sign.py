@@ -20,7 +20,7 @@ def issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub):
         # 2. CA 進行雙重簽署
         # A. ECC 簽署
         with open("CA/keys/ca_ecc_priv.key", "rb") as f:
-            ca_ecc_priv = serialization.load_pem_private_key(f.read(), password=None)
+            ca_ecc_priv = serialization.load_der_private_key(f.read(), password=None)
         ca_ecc_sig = ca_ecc_priv.sign(tbs_content, ec.ECDSA(hashes.SHA256()))
         
         # B. PQC 簽署
