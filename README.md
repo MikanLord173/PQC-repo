@@ -1,8 +1,8 @@
 # 執行
-終端機路徑請設在 PQC-repo。
-若要執行 OBU/main.py，請輸入：
-```python -m OBU.main```
-以此類推。
+終端機路徑請設在 PQC-repo。<br>
+若要執行 OBU/main.py，請輸入：<br>
+```python -m OBU.main```<br>
+以此類推。<br>
 
 # 流程
 
@@ -28,4 +28,7 @@
 # 短期目標
 * 讓CA產生OBU憑證的過程能夠遠端完成，不必綁在同一裝置。
     * CA可以安放在RSU端，或是其他第三方裝置。
-* OBU連線到一RSU時，記錄其IP, PORT。並且RSU端會將該OBU的公鑰存在本機。\n若OBU向已記錄的RSU發送封包，省略自己的公鑰，並將OBU公鑰長度的欄位都設為0。\n當RSU發現該欄位皆為0，便會嘗試讀取存在本機的OBU公鑰。\n每當OBU執行OBU.setup產生新金鑰時，清除RSU的記錄。
+* OBU連線到一RSU時，記錄其IP, PORT。並且RSU端會將該OBU的公鑰存在本機。<br>
+若OBU向已記錄的RSU發送封包，省略自己的公鑰，並將OBU公鑰長度的欄位都設為0。<br>
+當RSU發現該欄位皆為0，便會嘗試讀取存在本機的OBU公鑰。<br>
+每當OBU執行OBU.setup產生新金鑰時，清除RSU的記錄。
