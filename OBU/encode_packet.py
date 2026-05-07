@@ -6,7 +6,7 @@ from OBU.gen_payload import generate_bsm_payload
 from ctypes import create_string_buffer
 
 # 封包格式：Payload長度(2) | Payload | 憑證 | ECC簽章長度(1) | PQC簽章長度(2) | ECC簽章 | PQC簽章
-def gen_packet(obu_id):
+def gen_packet(obu_id, known_RSU=False):
     # 生成 Payload
     payload = generate_bsm_payload(obu_id)
     message = json.dumps(payload).encode('utf-8') # 將資料轉換為位元組格式
@@ -32,8 +32,12 @@ def gen_packet(obu_id):
         pqc_sig = signer.sign(message)
 
     # 讀取憑證
-    with open(f"OBU/cert/{obu_id}_cert.bin", "rb") as f:
-        cert = f.read()
+    if known_RSU:
+        with open(f"OBU/cert/{obu_id}_short_cert.bin", "rb") as f:
+            cert = f.read()
+    else:
+        with open(f"OBU/cert/{obu_id}_full_cert.bin", "rb") as f:
+            cert = f.read()
 
     msg_len = struct.pack('!H', len(message))   # 訊息長度 (2 bytes)
     sig_len = struct.pack('!BH', len(ecc_sig), len(pqc_sig))  # 簽章長度 (ECC 1 byte + PQC 2 bytes)

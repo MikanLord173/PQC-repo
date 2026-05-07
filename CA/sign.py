@@ -34,15 +34,20 @@ def issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub):
         # 3. 打包成最終憑證檔案 (.bin)
         # 為了讓 RSU 好拆，建議在每個變動長度欄位前加長度標頭
         pub_header = struct.pack('!BH', len(obu_ecc_pub), len(obu_pqc_pub)) # ECC公鑰長度 + PQC公鑰長度
+        empty_pub_header = struct.pack('!BH', 0, 0)
         sig_header = struct.pack('!BH', len(ca_ecc_sig), len(ca_pqc_sig)) # ECC簽章長度 + PQC簽章長度
-        
-        final_cert = ID_expiry + pub_header + obu_ecc_pub + obu_pqc_pub + sig_header + ca_ecc_sig + ca_pqc_sig
-        
-        with open(f"CA/cert/{obu_id}_cert.bin", "wb") as f:
-            f.write(final_cert)
+
+        short_cert = ID_expiry + empty_pub_header + sig_header + ca_ecc_sig + ca_pqc_sig
+        full_cert = ID_expiry + pub_header + obu_ecc_pub + obu_pqc_pub + sig_header + ca_ecc_sig + ca_pqc_sig
+
+        with open(f"CA/cert/{obu_id}_short_cert.bin", "wb") as f:
+            f.write(short_cert)
+
+        with open(f"CA/cert/{obu_id}_full_cert.bin", "wb") as f:
+            f.write(full_cert)
         
         print(f"已成功核發 {obu_id} 的後量子憑證！")
-        return final_cert
+        return short_cert, full_cert
     except Exception as e:
         print(f"核發憑證失敗：{e}")
         return None

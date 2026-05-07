@@ -8,7 +8,7 @@
 
 ## OBU端
 1. 執行 CA.gen_keys，產生CA金鑰對，或是透過其他裝置取得金鑰對，放入 CA/keys。
-2. 執行 OBU.setup，產生OBU金鑰對，並向CA請求憑證。
+2. 執行 OBU.setup，產生OBU金鑰對，並向CA請求憑證（自動儲存在 OBU/cert/）。
 3. 設定 OBU.main 中的 OBU_ID, RSU_IP, RSU_PORT 及 FREQUENCY。
 4. 執行 OBU.main，向 RSU 持續發送封包。
 5. 輸入 Ctrl+C 可終止程式。
@@ -32,4 +32,5 @@
 * OBU連線到一RSU時，記錄其IP, PORT。並且RSU端會將該OBU的公鑰存在本機。<br>
 若OBU向已記錄的RSU發送封包，省略自己的公鑰，並將OBU公鑰長度的欄位都設為0。<br>
 當RSU發現該欄位皆為0，便會嘗試讀取存在本機的OBU公鑰。<br>
-每當OBU執行OBU.setup產生新金鑰時，清除RSU的記錄。
+每當OBU執行OBU.setup產生新金鑰時，清除RSU的記錄。<br>
+此項正在測試中
