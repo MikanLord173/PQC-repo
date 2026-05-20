@@ -43,22 +43,14 @@ def parse_packet(packet):
     ecc_pub_len, pqc_pub_len = struct.unpack('!BH', packet[start:end])
 
     # 提取OBU ECC公鑰
-    if ecc_pub_len == 0:
-        with open(f"RSU/keys/{ID.decode('utf-8')}_ecc_pub.key", "rb") as f:
-            obu_ecc_pub = f.read()
-    else:
-        start = end
-        end += ecc_pub_len
-        obu_ecc_pub = packet[start:end]
+    start = end
+    end += ecc_pub_len
+    obu_ecc_pub = packet[start:end]
 
     # 提取OBU PQC公鑰
-    if pqc_pub_len == 0:
-        with open(f"RSU/keys/{ID.decode('utf-8')}_pqc_pub.key", "rb") as f:
-            obu_pqc_pub = f.read()
-    else:
-        start = end
-        end += pqc_pub_len
-        obu_pqc_pub = packet[start:end]
+    start = end
+    end += pqc_pub_len
+    obu_pqc_pub = packet[start:end]
 
     # TBSC內容：ID_expiry + obu_ecc_pub + obu_pqc_pub
     tbs_content = ID_expiry_bytes + obu_ecc_pub + obu_pqc_pub

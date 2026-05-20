@@ -1,15 +1,50 @@
-import oqs
-import json
+import oqs, struct
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
-from CA.sign import issue_obu_certificate
 from OBU.main import OBU_ID
+from socket import *
+
+CA_IP = '127.0.0.1'
+CA_PORT = 57217
+BUF_SIZE = 4096 
+
+def recv_all(sock, count):
+    """循環使用 4096 buffer size 讀取，讀取到 count bytes"""
+    buffer = b''
+    while(len(buffer) < count):
+        to_read = min(count-len(buffer), BUF_SIZE)
+        chunk = sock.recv(to_read)
+        if not chunk:
+            return None
+        buffer += chunk
+    return buffer
+
+# 向CA傳送OBU ID, ECC公鑰及PQC公鑰，請求憑證
+def request_cert(ca_ip, ca_port, obu_id, obu_ecc_pub, obu_pqc_pub):
+    # Create TCP socket for CA
+    clientSocket = socket(AF_INET, SOCK_STREAM)
+    # Connect the socket to CA's IP and port
+    clientSocket.connect((ca_ip, ca_port))
+    try:
+        # 打包header：OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes)
+        req_header = struct.pack('!8sBH', obu_id.encode(), len(obu_ecc_pub), len(obu_pqc_pub))
+        message = req_header + obu_ecc_pub + obu_pqc_pub
+
+        # Attach CA IP and port to message, send into socket
+        clientSocket.sendto(message, (CA_IP, CA_PORT))
+
+        recv_header = recv_all(clientSocket, 4)
+        cert_len = struct.unpack('!I', recv_header)
+
+        cert = recv_all(clientSocket, cert_len)
+    except Exception as e:
+        print(e)
+        cert = None
+
+    clientSocket.close()
+    return cert
 
 def setup(obu_id):
-    # 清空原有內容
-    with open("OBU/json/saved_RSU.json", "w") as f:
-        empty_data = {}
-        json.dump(empty_data, f, indent=4)
 
     # 準備 ECC 金鑰
     obu_ecc_priv = ec.generate_private_key(ec.SECP256R1())
@@ -39,15 +74,12 @@ def setup(obu_id):
     with open(f"OBU/keys/{obu_id}_pqc_priv.key", "wb") as f:
         f.write(obu_pqc_priv)
 
-    short_cert, full_cert = issue_obu_certificate(obu_id, obu_ecc_pub_bytes, obu_pqc_pub)
-    if short_cert is not None:
-        with open(f"OBU/cert/{obu_id}_short_cert.bin", "wb") as f:
-            f.write(short_cert)
-    if full_cert is not None:
+    cert = request_cert(CA_IP, CA_PORT, obu_id, obu_ecc_pub_bytes, obu_pqc_pub)
+    if cert is not None:
         with open(f"OBU/cert/{obu_id}_full_cert.bin", "wb") as f:
-            f.write(full_cert)
+            f.write(cert)
 
-    return short_cert, full_cert
+    return cert
 if __name__ == "__main__":
     if setup(OBU_ID):
         print(f"{OBU_ID} 的金鑰和憑證已成功生成！")
