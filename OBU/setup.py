@@ -36,7 +36,7 @@ def request_cert(ca_ip, ca_port, obu_id, obu_ecc_pub, obu_pqc_pub):
         clientSocket.sendto(message, (CA_IP, CA_PORT))
 
         recv_header = recv_all(clientSocket, 4)
-        cert_len = struct.unpack('!I', recv_header)
+        cert_len = struct.unpack('!I', recv_header)[0]
 
         cert = recv_all(clientSocket, cert_len)
     except Exception as e:
