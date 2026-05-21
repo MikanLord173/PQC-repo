@@ -8,13 +8,21 @@
 
 ## 初始化階段
 1. 在專案根目錄 (PQC-repo/) 建立名為 ".env" 的檔案
-2. 在 .env 設定參數：CA_IP, CA_PORT, RSU_IP, RSU_PORT, OBU_ID, OBU_FREQ
+2. 在 .env 設定參數：CA_IP, CA_PORT, RSU_IP, RSU_PORT
 3. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
-2. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
-3. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
+4. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
+5. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
+
+### .env 檔範例：
+```
+CA_IP = "127.0.0.1"
+CA_PORT = 57217
+RSU_IP = "192.168.1.174" 
+RSU_PORT = 5005
+```
 
 ## OBU端執行階段
-1. 執行 OBU.main，向 RSU 持續發送封包。
+1. 執行 OBU.main，命令列參數輸入車輛ID(必填)及發送頻率(可選，預設5秒)，向 RSU 持續發送封包。
 2. 輸入 Ctrl+C 可終止程式。
 
 ## RSU端執行階段

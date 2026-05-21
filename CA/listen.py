@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CA_IP = os.getenv("CA_IP", "127.0.0.1")
 CA_PORT = int(os.getenv("CA_PORT", 57217))
 BUF_SIZE = 4096 
 
