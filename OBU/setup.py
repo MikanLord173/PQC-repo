@@ -26,8 +26,8 @@ def request_cert(ca_ip, ca_port, obu_id, obu_ecc_pub, obu_pqc_pub):
     # Connect the socket to CA's IP and port
     clientSocket.connect((ca_ip, ca_port))
     try:
-        # 打包header：OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes)
-        req_header = struct.pack('!8sBH', obu_id.encode(), len(obu_ecc_pub), len(obu_pqc_pub))
+        # 打包header：OBU識別碼 0x57 | OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes)
+        req_header = struct.pack('!B8sBH', 0x57, obu_id.encode(), len(obu_ecc_pub), len(obu_pqc_pub))
         message = req_header + obu_ecc_pub + obu_pqc_pub
 
         # Attach CA IP and port to message, send into socket
@@ -76,7 +76,7 @@ def setup(obu_id):
 
     cert = request_cert(CA_IP, CA_PORT, obu_id, obu_ecc_pub_bytes, obu_pqc_pub)
     if cert is not None:
-        with open(f"OBU/cert/{obu_id}_full_cert.bin", "wb") as f:
+        with open(f"OBU/cert/{obu_id}_cert.bin", "wb") as f:
             f.write(cert)
 
     return cert
