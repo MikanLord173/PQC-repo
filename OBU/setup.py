@@ -1,11 +1,14 @@
-import oqs, struct
+import oqs, struct, os
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
 from OBU.main import OBU_ID
 from socket import *
+from dotenv import load_dotenv
 
-CA_IP = '127.0.0.1'
-CA_PORT = 57217
+load_dotenv()
+
+CA_IP = os.getenv("CA_IP", "127.0.0.1")
+CA_PORT = int(os.getenv("CA_PORT", 57217))
 BUF_SIZE = 4096 
 
 def recv_all(sock, count):

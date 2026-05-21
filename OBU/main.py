@@ -1,12 +1,15 @@
-import socket, time, json
+import socket, time, os
 from OBU.encode_packet import gen_packet
 from OBU.fragment import send_fragment
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 配置參數
-OBU_ID = "AMB-217"  # 車輛 ID，最多8字元
-RSU_IP = "192.168.1.174" 
-RSU_PORT = 5005
-FREQUENCY = 5  # 發送頻率 (秒)
+OBU_ID = os.getenv("OBU_ID", "AMB-217")  # 車輛 ID，最多8字元
+RSU_IP = os.getenv("RSU_IP", "192.168.1.174")
+RSU_PORT = int(os.getenv("RSU_PORT", 5005))
+FREQUENCY = int(os.getenv("OBU_FREQ", 5))  # 發送頻率 (秒)
 
 # 用計數器的方式取得ID
 current_msg_id = 0

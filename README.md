@@ -7,19 +7,19 @@
 # 流程
 
 ## 初始化階段
-1. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
+1. 在專案根目錄 (PQC-repo/) 建立名為 ".env" 的檔案
+2. 在 .env 設定參數：CA_IP, CA_PORT, RSU_IP, RSU_PORT, OBU_ID, OBU_FREQ
+3. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
 2. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
 3. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
 
 ## OBU端執行階段
-1. 設定 OBU.main 中的 OBU_ID, RSU_IP, RSU_PORT 及 FREQUENCY。
-2. 執行 OBU.main，向 RSU 持續發送封包。
-3. 輸入 Ctrl+C 可終止程式。
+1. 執行 OBU.main，向 RSU 持續發送封包。
+2. 輸入 Ctrl+C 可終止程式。
 
 ## RSU端執行階段
-1. 設定 RSU.main 中的 RSU_IP, RSU_PORT。
-2. 執行 RSU.main，接收封包切片。
-3. 輸入 Ctrl+C 可終止程式。
+1. 執行 RSU.main，接收封包切片。
+2. 輸入 Ctrl+C 可終止程式。
 
 # 注意事項
 * OBU.signature 目前沒用到，請無視。

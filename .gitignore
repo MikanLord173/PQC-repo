@@ -1,4 +1,5 @@
 *.key
 *.json
 *.bin
+.env
 .DS_Store

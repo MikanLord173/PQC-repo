@@ -1,9 +1,11 @@
-import socket, time
+import socket, time, os
 import RSU.parse as parse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 配置參數
-RSU_IP = "0.0.0.0"  # 監聽所有可用的網路介面
-RSU_PORT = 5005     # 自定義連接埠
+RSU_PORT = int(os.getenv("RSU_PORT", 5005))     # 自定義連接埠
 BUFFER_SIZE = 4096  # 預留稍大緩衝區，為之後的 PQC 簽章做準備
 
 # 要改成用 (msg_id, addr) 當 key，這樣就不會有不同車輛的訊息混在一起了
@@ -71,6 +73,6 @@ if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     # 將 Socket 綁定到 IP 與 Port
-    sock.bind((RSU_IP, RSU_PORT))
+    sock.bind(("0.0.0.0", RSU_PORT))
     print(f"--- RSU 已啟動，正在監聽連接埠 {RSU_PORT} ---")
     receive_data(sock)
