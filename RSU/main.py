@@ -11,6 +11,20 @@ BUFFER_SIZE = 4096  # 預留稍大緩衝區，為之後的 PQC 簽章做準備
 # 要改成用 (msg_id, addr) 當 key，這樣就不會有不同車輛的訊息混在一起了
 reassemble_buffer = {}  # 用於存儲分片資料的緩衝區，key 為 (msg_id, addr)，value 為分片列表
 
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # 這裡的 IP 是 Google Public DNS，不需要真的連通
+        # 只是藉由測試連線來逼作業系統吐出目前作用中的區域網路 IP
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        # 如果完全沒網路（例如單機離線），就退回 localhost
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
+
 def receive_data(sock):
     try:
         while True:
@@ -74,5 +88,5 @@ if __name__ == "__main__":
 
     # 將 Socket 綁定到 IP 與 Port
     sock.bind(("0.0.0.0", RSU_PORT))
-    print(f"--- RSU 已啟動，正在監聽連接埠 {RSU_PORT} ---")
+    print(f"--- RSU 已啟動，IP：{get_local_ip()}，正在監聽連接埠 {RSU_PORT} ---")
     receive_data(sock)
