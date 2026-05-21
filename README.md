@@ -9,9 +9,10 @@
 ## 初始化階段
 1. 在專案根目錄 (PQC-repo/) 建立名為 ".env" 的檔案
 2. 在 .env 設定參數：CA_IP, CA_PORT, RSU_IP, RSU_PORT
-3. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
-4. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
-5. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
+3. CA端執行CA.gen_keys，產生金鑰對
+4. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
+5. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
+6. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
 
 ### .env 檔範例：
 ```
