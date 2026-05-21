@@ -51,7 +51,7 @@ def main():
         connectionSocket, addr = serverSocket.accept()
         print(f"Connection from {addr} has been established.")
 
-        id_code = struct.unpack('!B', recv_all(connectionSocket, 1))
+        id_code = struct.unpack('!B', recv_all(connectionSocket, 1))[0]
         if id_code == 0x57:     # OBU
             # | 識別碼 (1 byte) | OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes) | -> 不含識別碼 11 bytes
             req_header = recv_all(connectionSocket, 11)
@@ -73,7 +73,8 @@ def main():
             reply = ca_ecc_pub + ca_pqc_pub
         else:
             print("Not OBU nor RSU, skipped.")
-            continue
+            reply_header = None
+            reply = None
 
         # Send certificate / pub keys back to OBU / RSU
         connectionSocket.sendall(reply_header + reply)

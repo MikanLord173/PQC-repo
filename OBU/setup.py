@@ -1,7 +1,6 @@
-import oqs, struct, os
+import oqs, struct, os, argparse
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
-from OBU.main import OBU_ID
 from socket import *
 from dotenv import load_dotenv
 
@@ -84,7 +83,11 @@ def setup(obu_id):
 
     return cert
 if __name__ == "__main__":
-    if setup(OBU_ID):
-        print(f"{OBU_ID} 的金鑰和憑證已成功生成！")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("obu_id", type=str, help="緊急車輛的編號")
+    args = parser.parse_args()
+
+    if setup(args.obu_id):
+        print(f"{args.obu_id} 的金鑰和憑證已成功生成！")
     else:
-        print(f"{OBU_ID} 的金鑰和憑證生成失敗！")
+        print(f"{args.obu_id} 的金鑰和憑證生成失敗！")
