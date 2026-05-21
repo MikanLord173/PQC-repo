@@ -12,7 +12,7 @@
 3. CA端執行CA.gen_keys，產生金鑰對
 4. CA端執行 CA.listen，監聽來自 OBU 與 RSU 的請求。
 5. RSU端設定好CA_IP後執行 RSU.setup，請求CA公鑰。
-6. OBU端設定好CA_IP後執行 OBU.setup，請求憑證並產生金鑰對。
+6. OBU端設定好CA_IP後執行 OBU.setup，命令列參數必須輸入車輛ID，請求憑證並產生金鑰對。
 
 ### .env 檔範例：
 ```
