@@ -32,7 +32,7 @@ def gen_packet(obu_id):
         pqc_sig = signer.sign(message)
 
     # 讀取憑證
-    with open(f"OBU/cert/{obu_id}_full_cert.bin", "rb") as f:
+    with open(f"OBU/cert/{obu_id}_cert.bin", "rb") as f:
         cert = f.read()
 
     msg_len = struct.pack('!H', len(message))   # 訊息長度 (2 bytes)
