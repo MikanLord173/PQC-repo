@@ -56,6 +56,8 @@ def main():
             # | 識別碼 (1 byte) | OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes) | -> 不含識別碼 11 bytes
             req_header = recv_all(connectionSocket, 11)
             obu_id, obu_ecc_pub_len, obu_pqc_pub_len = struct.unpack('!8sBH', req_header)
+            obu_id = obu_id.decode()
+            print(f"已接收到 OBU {obu_id} 的請求")
 
             obu_ecc_pub = recv_all(connectionSocket, obu_ecc_pub_len)
             obu_pqc_pub = recv_all(connectionSocket, obu_pqc_pub_len)
@@ -64,6 +66,7 @@ def main():
             reply_header = struct.pack('!I', len(cert))
             reply = cert
         elif id_code == 0x67:   # RSU，只傳識別碼
+            print(f"已接收到 RSU 的請求")
             with open('CA/keys/ca_ecc_pub.key', 'rb') as f:
                 ca_ecc_pub = f.read()
             with open('CA/keys/ca_pqc_pub.key', 'rb') as f:
