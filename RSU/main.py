@@ -1,6 +1,7 @@
-import socket, time, os
+import time, os
 import RSU.parse as parse
 from dotenv import load_dotenv
+from socket import *
 
 load_dotenv()
 
@@ -12,7 +13,7 @@ BUFFER_SIZE = 4096  # 預留稍大緩衝區，為之後的 PQC 簽章做準備
 reassemble_buffer = {}  # 用於存儲分片資料的緩衝區，key 為 (msg_id, addr)，value 為分片列表
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = socket(AF_INET, SOCK_DGRAM)
     try:
         # 這裡的 IP 是 Google Public DNS，不需要真的連通
         # 只是藉由測試連線來逼作業系統吐出目前作用中的區域網路 IP
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     # 建立 UDP Socket
     # socket.AF_INET 代表使用 IPv4
     # socket.SOCK_DGRAM 代表使用 UDP 協議
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock = socket(AF_INET, SOCK_DGRAM)
 
     # 將 Socket 綁定到 IP 與 Port
     sock.bind(("0.0.0.0", RSU_PORT))

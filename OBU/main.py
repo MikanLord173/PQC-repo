@@ -1,7 +1,8 @@
-import socket, time, os, argparse
+import time, os, argparse
 from OBU.encode_packet import gen_packet
 from OBU.fragment import send_fragment
 from dotenv import load_dotenv
+from socket import *
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ def get_next_id():
     return current_msg_id
 
 # 建立 UDP Socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock = socket(AF_INET, SOCK_DGRAM)
 
 def send_heartbeat(obu_id, freq):
     try:

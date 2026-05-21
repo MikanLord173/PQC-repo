@@ -9,7 +9,7 @@ CA_PORT = int(os.getenv("CA_PORT", 57217))
 BUF_SIZE = 4096 
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = socket(AF_INET, SOCK_DGRAM)
     try:
         # 這裡的 IP 是 Google Public DNS，不需要真的連通
         # 只是藉由測試連線來逼作業系統吐出目前作用中的區域網路 IP
