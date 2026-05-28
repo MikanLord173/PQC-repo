@@ -4,6 +4,23 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 PQC_SIG_NAME = "ML-DSA-44"
+# 新增全域變數暫存 CA 公鑰
+GLOBAL_CA_ECC_PUB = None
+GLOBAL_CA_PQC_PUB = None
+
+def preload_ca_keys():
+    """在 RSU 啟動時呼叫一次，把 CA 公鑰載入記憶體"""
+    global GLOBAL_CA_ECC_PUB, GLOBAL_CA_PQC_PUB
+    print("正在載入 CA 信任根到記憶體...")
+    
+    # 載入 ECC
+    with open("RSU/keys/ca_ecc_pub.key", "rb") as f:
+        ca_ecc_pub_data = f.read()
+    GLOBAL_CA_ECC_PUB = serialization.load_der_public_key(ca_ecc_pub_data)
+    
+    # 載入 PQC
+    with open("RSU/keys/ca_pqc_pub.key", "rb") as f:
+        GLOBAL_CA_PQC_PUB = f.read()
 
 # Header 格式：序列號(1) | 總分片數(1) | 訊息ID(2)
 def parse_header(header_bytes):
@@ -104,22 +121,16 @@ def verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content):
 
     # 驗證ECC
     try:
-        with open("RSU/keys/ca_ecc_pub.key", "rb") as f:
-            ca_ecc_pub_data = f.read()
-        ca_ecc_pub = serialization.load_der_public_key(ca_ecc_pub_data)
-        ca_ecc_pub.verify(ca_ecc_sig, tbs_content, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
+        GLOBAL_CA_ECC_PUB.verify(ca_ecc_sig, tbs_content, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
         print("CA ECC 簽章驗證成功")
         ecc_ok = True
     except Exception as e:
         print(f"CA ECC 簽章驗證失敗：{e}")
-        print("CA 混合簽章驗證失敗")
         return False
 
     # 驗證PQC
     with oqs.Signature(PQC_SIG_NAME) as verifier:
-        with open("RSU/keys/ca_pqc_pub.key", "rb") as f:
-            ca_pqc_pub = f.read()  # PQC 公鑰直接讀取 bytes
-        pqc_ok = verifier.verify(tbs_content, ca_pqc_sig, ca_pqc_pub)  # 使用 PQC 公鑰驗證 PQC 簽章
+        pqc_ok = verifier.verify(tbs_content, ca_pqc_sig, GLOBAL_CA_PQC_PUB)  # 使用 PQC 公鑰驗證 PQC 簽章
         if pqc_ok:
             print("CA PQC 簽章驗證成功")
         else:
