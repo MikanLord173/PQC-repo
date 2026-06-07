@@ -34,7 +34,7 @@ def parse_header(header_bytes):
 # 封包格式：Payload長度(2) | Payload | 憑證 | ECC簽章長度(1) | PQC簽章長度(2) | OBU_ECC簽章 | OBU_PQC簽章
 # 憑證格式：| ID (8 bytes) | Expiry (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes) | ECC公鑰 (variable) | PQC公鑰 (variable) | 
 # CA_ECC簽章長度 (1 byte) | CA_PQC簽章長度 (2 bytes) | CA_ECC簽章 (variable) | CA_PQC簽章 (variable) |
-def parse_packet(packet):
+def parse_packet(packet, logger):
     # 提取 Payload 長度
     end = 2
     msg_len = int(struct.unpack('!H', packet[:end])[0])
@@ -48,10 +48,17 @@ def parse_packet(packet):
     start = end
     end += 16
     ID_expiry_bytes = packet[start:end]
-    ID, expiry = struct.unpack('!8sQ', ID_expiry_bytes)
+    obu_id, expiry = struct.unpack('!8sQ', ID_expiry_bytes)
 
     if time.time() > expiry:
-        print(f"憑證已過期 (ID: {ID.decode('utf-8')}, Expiry: {time.ctime(expiry)})")
+        logger.warning(
+                    "封包已過期，停止解析",
+                    extra={"extra_data": {
+                        "event": "EXPIRED_PACKET",
+                        "obu_id": obu_id,
+                        "drop_reason": "Packet expired"
+                    }}
+                )
         return None
 
     # 提取ECC公鑰長度 + PQC公鑰長度
@@ -88,9 +95,37 @@ def parse_packet(packet):
     ca_pqc_sig = packet[start:end]
 
     # 驗證憑證有效性
-    if not verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content):
-        print("憑證驗證失敗，拒絕通行。")
+    ca_ecc_ok, ca_pqc_ok = verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content)
+
+    if not ca_ecc_ok:
+        logger.warning(
+            "CA ECC簽章驗證失敗，停止解析",
+            extra={"extra_data": {
+                "event": "CA_ECC_FAILED",
+                "obu_id": obu_id,
+                "drop_reason": "CA ECC signature verification failed"
+            }}
+        )
         return None
+
+    if not ca_pqc_ok:
+        logger.warning(
+            "CA PQC簽章驗證失敗，停止解析",
+            extra={"extra_data": {
+                "event": "CA_PQC_FAILED",
+                "obu_id": obu_id,
+                "drop_reason": "CA PQC signature verification failed"
+            }}
+        )
+        return None
+
+    logger.info(
+        "CA 混合簽章驗證成功",
+        extra={"extra_data": {
+            "event": "CA_SIG_PASSED",
+            "obu_id": obu_id
+        }}
+    )
 
     # 提取OBU兩簽章長度
     start = end
@@ -109,12 +144,39 @@ def parse_packet(packet):
 
     obu_ecc_pub_obj = serialization.load_der_public_key(obu_ecc_pub)  # 解析 ECC 公鑰
 
-    passed = verify_obu_sig(obu_ecc_pub_obj, obu_pqc_pub, obu_ecc_sig, obu_pqc_sig, payload_bytes)  # 呼叫驗證函式
+    obu_ecc_ok, obu_pqc_ok = verify_obu_sig(obu_ecc_pub_obj, obu_pqc_pub, obu_ecc_sig, obu_pqc_sig, payload_bytes)  # 呼叫驗證函式
 
-    if passed:
-        return json.loads(payload_bytes) # 驗證成功，回傳訊息內容
-    else:
-        return None  # 驗證失敗，回傳 None
+    if not obu_ecc_ok:
+        logger.warning(
+            "OBU ECC簽章驗證失敗，停止解析",
+            extra={"extra_data": {
+                "event": "OBU_ECC_FAILED",
+                "obu_id": obu_id,
+                "drop_reason": "OBU ECC signature verification failed"
+            }}
+        )
+        return None
+
+    if not obu_pqc_ok:
+        logger.warning(
+            "OBU PQC簽章驗證失敗，停止解析",
+            extra={"extra_data": {
+                "event": "OBU_PQC_FAILED",
+                "obu_id": obu_id,
+                "drop_reason": "OBU PQC signature verification failed"
+            }}
+        )
+        return None
+
+    logger.info(
+        "OBU 混合簽章驗證成功",
+        extra={"extra_data": {
+            "event": "OBU_SIG_PASSED",
+            "obu_id": obu_id
+        }}
+    )
+
+    return json.loads(payload_bytes) # 驗證成功，回傳訊息內容
 
 def verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content):
     ecc_ok, pqc_ok = False, False
@@ -122,48 +184,27 @@ def verify_cert(ca_ecc_sig, ca_pqc_sig, tbs_content):
     # 驗證ECC
     try:
         GLOBAL_CA_ECC_PUB.verify(ca_ecc_sig, tbs_content, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
-        print("CA ECC 簽章驗證成功")
         ecc_ok = True
-    except Exception as e:
-        print(f"CA ECC 簽章驗證失敗：{e}")
-        return False
+    except:
+        pass
 
     # 驗證PQC
     with oqs.Signature(PQC_SIG_NAME) as verifier:
         pqc_ok = verifier.verify(tbs_content, ca_pqc_sig, GLOBAL_CA_PQC_PUB)  # 使用 PQC 公鑰驗證 PQC 簽章
-        if pqc_ok:
-            print("CA PQC 簽章驗證成功")
-        else:
-            print("CA PQC 簽章驗證失敗")
 
-    if ecc_ok and pqc_ok:
-        print("CA 混合簽章驗證成功")
-        return True
-    else:
-        print("CA 混合簽章驗證失敗")
-        return False
+    return ecc_ok, pqc_ok
 
 def verify_obu_sig(ecc_pub, pqc_pub, ecc_sig, pqc_sig, payload_bytes):
+    ecc_ok, pqc_ok = False, False
     # 驗證ECC
     try:
         ecc_pub.verify(ecc_sig, payload_bytes, ec.ECDSA(hashes.SHA256()))  # 使用 ECC 公鑰驗證 ECC 簽章
-        print("OBU ECC 簽章驗證成功")
         ecc_ok = True
     except Exception as e:
-        print(f"OBU ECC 簽章驗證失敗：{e}")
-        ecc_ok = False
+        pass
 
     # 驗證PQC
     with oqs.Signature(PQC_SIG_NAME) as verifier:
         pqc_ok = verifier.verify(payload_bytes, pqc_sig, pqc_pub)  # 使用 PQC 公鑰驗證 PQC 簽章
-        if pqc_ok:
-            print("OBU PQC 簽章驗證成功")
-        else:
-            print("OBU PQC 簽章驗證失敗")
 
-    if ecc_ok and pqc_ok:
-        print("OBU 混合簽章驗證成功")
-        return True
-    else:
-        print("OBU 混合簽章驗證失敗")
-        return False
+    return ecc_ok, pqc_ok
