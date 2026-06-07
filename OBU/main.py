@@ -1,8 +1,10 @@
 import time, os, argparse
 from OBU.encode_packet import gen_packet
 from OBU.fragment import send_fragment
+from OBU.setup import setup
 from dotenv import load_dotenv
 from socket import *
+from pathlib import Path
 
 load_dotenv()
 
@@ -30,13 +32,20 @@ def send_heartbeat(obu_id, freq):
             
             time.sleep(freq)   # 定時發送
     except KeyboardInterrupt:
-        print("\nOBU 已停止發送")
+        print(f"\n[{obu_id}] 已停止發送封包")
     finally:
         sock.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("obu_id", type=str, help="緊急車輛的編號")
-    parser.add_argument("-f", "--freq", type=int, default=5, help="發送分片的頻率(秒)，預設為 5")
+    parser.add_argument("-f", "--freq", type=float, default=5, help="發送分片的頻率(秒)，預設為 5")
     args = parser.parse_args()
+
+    cert_path = Path(f"./cert/{args.obu_id}_cert.bin")
+    if not cert_path.is_file():
+        print(f"[{args.obu_id}] 未偵測到該車輛的憑證，正在初始化...")
+        setup(args.obu_id)
+
+    print(f"[{args.obu_id}] 即將發送封包...")
     send_heartbeat(args.obu_id, args.freq)
