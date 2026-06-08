@@ -49,6 +49,7 @@ def request_cert(ca_ip, ca_port, obu_id, obu_ecc_pub, obu_pqc_pub):
 def setup(obu_id):
 
     # 準備 ECC 金鑰
+    print("正在準備ECC/PQC金鑰對...")
     obu_ecc_priv = ec.generate_private_key(ec.SECP256R1())
     obu_ecc_pub_bytes = obu_ecc_priv.public_key().public_bytes(
             encoding=serialization.Encoding.DER,
@@ -75,13 +76,17 @@ def setup(obu_id):
     
     with open(f"OBU/keys/{obu_id}_pqc_priv.key", "wb") as f:
         f.write(obu_pqc_priv)
+    print("金鑰對建立成功！")
 
+    print("正在向CA請求憑證...")
     cert = request_cert(CA_IP, CA_PORT, obu_id, obu_ecc_pub_bytes, obu_pqc_pub)
     if cert is not None:
         with open(f"OBU/cert/{obu_id}_cert.bin", "wb") as f:
             f.write(cert)
-
+    else:
+        print("憑證請求失敗！")
     return cert
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("obu_id", type=str, help="緊急車輛的編號")

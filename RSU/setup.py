@@ -25,6 +25,7 @@ def request_ca_pub(ca_ip, ca_port):
     clientSocket = socket(AF_INET, SOCK_STREAM)
     # Connect the socket to CA's IP and port
     clientSocket.connect((ca_ip, ca_port))
+    print(f"Connected to {ca_ip}:{ca_port}")
     try:
         # 打包訊息：只有RSU識別碼 0x67
         message = struct.pack('!B', 0x67)
