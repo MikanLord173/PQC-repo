@@ -1,5 +1,3 @@
-"""暫時無用，引入ECQV隱式糾纏後功能被enroll.py替代"""
-
 import struct
 import time
 import oqs

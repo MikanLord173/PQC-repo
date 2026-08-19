@@ -1,6 +1,4 @@
-import oqs, struct, os, argparse, hashlib
-from ecdsa import SigningKey, NIST256p
-from ecdsa.util import randrange
+import oqs, struct, os, argparse
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
 from socket import *
@@ -23,67 +21,46 @@ def recv_all(sock, count):
         buffer += chunk
     return buffer
 
-def generate_enrollment_request():
-    curve = NIST256p
-    G = curve.generator
-    n = curve.order
-    
-    # 1. 產生 OBU 的隨機貢獻值 k_U (必須保存在 OBU 記憶體中，等 CA 回傳後要用)
-    k_U = randrange(n)
-    
-    # 2. 計算請求點 R_U
-    R_U = k_U * G
-    R_U_bytes = R_U.to_bytes("compressed") # 壓成 33 bytes
-    
-    return k_U, R_U_bytes
-
-def obu_derive_key(obu_id: str, P_U_bytes: bytes, obu_pqc_pub: bytes, r: int, k_U: int):
-    curve = NIST256p
-    n = curve.order
-    
-    # 1. OBU 重算相同的雜湊糾纏值 e
-    entangled_data = obu_id.encode() + P_U_bytes + obu_pqc_pub
-    e = int(hashlib.sha256(entangled_data).hexdigest(), 16) % n
-    
-    # 2. 推導真正的 ECC 私鑰 d_U
-    d_U = (e * k_U + r) % n
-    return d_U
-
 # 向CA傳送OBU ID, ECC公鑰及PQC公鑰，請求憑證
-def request(ca_ip, ca_port, obu_id, R_U_bytes, obu_pqc_pub):
+def request_cert(ca_ip, ca_port, obu_id, obu_ecc_pub, obu_pqc_pub):
     # Create TCP socket for CA
     clientSocket = socket(AF_INET, SOCK_STREAM)
     # Connect the socket to CA's IP and port
     clientSocket.connect((ca_ip, ca_port))
     try:
-        # 打包header：OBU識別碼 0x57 | OBU ID (8 bytes) | PQC公鑰長度 (2 bytes)
-        req_header = struct.pack('!B8sBH', 0x57, obu_id.encode(), len(obu_pqc_pub))
-        message = req_header + R_U_bytes + obu_pqc_pub
+        # 打包header：OBU識別碼 0x57 | OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes)
+        req_header = struct.pack('!B8sBH', 0x57, obu_id.encode(), len(obu_ecc_pub), len(obu_pqc_pub))
+        message = req_header + obu_ecc_pub + obu_pqc_pub
 
         # Attach CA IP and port to message, send into socket
         clientSocket.sendto(message, (CA_IP, CA_PORT))
 
         recv_header = recv_all(clientSocket, 4)
-        response_len = struct.unpack('!I', recv_header)[0]
+        cert_len = struct.unpack('!I', recv_header)[0]
 
-        response = recv_all(clientSocket, response_len)
+        cert = recv_all(clientSocket, cert_len)
     except Exception as e:
         print(e)
-        response = None
+        cert = None
 
     clientSocket.close()
-    return response
+    return cert
 
 def setup(obu_id):
 
     # 準備 ECC 金鑰
-    '''
     print("正在準備ECC/PQC金鑰對...")
     obu_ecc_priv = ec.generate_private_key(ec.SECP256R1())
     obu_ecc_pub_bytes = obu_ecc_priv.public_key().public_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
+
+    # 準備 PQC 金鑰 (ML-DSA-44)
+    obu_pqc = oqs.Signature("ML-DSA-44")
+    obu_pqc_pub = obu_pqc.generate_keypair()
+    obu_pqc_priv = obu_pqc.export_secret_key()
+
     with open(f"OBU/keys/{obu_id}_ecc_pub.key", "wb") as f:
         f.write(obu_ecc_pub_bytes)
 
@@ -93,16 +70,6 @@ def setup(obu_id):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption() # 專題演示建議先不加密
         ))
-    '''
-
-    # 產生一次性密碼學隨機數 k_U
-    # 並利用 k_U算出請求點 R_U (R_U = k_U * G)，壓縮為 33 byte
-    k_U, R_U_bytes = generate_enrollment_request()
-
-    # 準備 PQC 金鑰 (ML-DSA-44)
-    obu_pqc = oqs.Signature("ML-DSA-44")
-    obu_pqc_pub = obu_pqc.generate_keypair()
-    obu_pqc_priv = obu_pqc.export_secret_key()
 
     with open(f"OBU/keys/{obu_id}_pqc_pub.key", "wb") as f:
         f.write(obu_pqc_pub)
@@ -111,35 +78,14 @@ def setup(obu_id):
         f.write(obu_pqc_priv)
     print("金鑰對建立成功！")
 
-    # 將 [車輛 ID, 33-byte 的 RU, 巨大的 PQC 公鑰 pk_U] 傳給 CA。
     print("正在向CA請求憑證...")
-    response = request(CA_IP, CA_PORT, obu_id, R_U_bytes, obu_pqc_pub)
-
-    # 接收 P_U, CA_PQC_SIG, r
-    if response is not None:
-        P_U_bytes, r_bytes, sig_len = struct.unpack("!33s 32s H", response[:67])
-        ca_pqc_sig = struct.unpack(f"!{sig_len}s", response[67 : 67 + sig_len])[0]
-        # 位元組轉數字：將 r_bytes 轉回 Python 大整數
-        r_int = int.from_bytes(r_bytes, byteorder='big')
+    cert = request_cert(CA_IP, CA_PORT, obu_id, obu_ecc_pub_bytes, obu_pqc_pub)
+    if cert is not None:
         with open(f"OBU/cert/{obu_id}_cert.bin", "wb") as f:
-            f.write(response)
+            f.write(cert)
     else:
         print("憑證請求失敗！")
-
-    # 重新計算雜湊糾纏值 e
-    # 利用算出的 e、收到的 r 與自己記憶體裡的 k_U，推導出真正的 ECC 私鑰 d_U = (e * k_U + r) % n
-    d_U = obu_derive_key(obu_id, P_U_bytes, obu_pqc_pub, r_int, k_U)
-
-    # 將 d_U, P_U 和 ca_pqc_sig 存在本地
-    obu_ecc_sk = SigningKey.from_secret_exponent(d_U, curve=NIST256p)
-    with open(f"OBU/keys/{obu_id}_ecc_priv.key", "wb") as f:
-        f.write(obu_ecc_sk.to_pem())
-    with open(f"OBU/bin/{obu_id}_ca_pqc_sig.bin", "wb") as f:
-        f.write(ca_pqc_sig)
-    with open(f"OBU/bin/{obu_id}_P_U.bin", "wb") as f:
-        f.write(P_U_bytes)
-    # 從記憶體中銷毀 k_U 與 r
-
+    return cert
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
