@@ -139,6 +139,7 @@ def setup(obu_id):
     with open(f"OBU/bin/{obu_id}_P_U.bin", "wb") as f:
         f.write(P_U_bytes)
     # 從記憶體中銷毀 k_U 與 r
+    return True
 
 
 if __name__ == "__main__":
