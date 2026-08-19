@@ -1,7 +1,6 @@
 import struct, os
 from socket import *
 from CA.sign import issue_obu_certificate
-from CA.enroll import ca_process_enrollment
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,20 +53,18 @@ def main():
 
         id_code = struct.unpack('!B', recv_all(connectionSocket, 1))[0]
         if id_code == 0x57:     # OBU
-            # OBU識別碼 0x57 | OBU ID (8 bytes) | PQC公鑰長度 (2 bytes) -> 不含識別碼 10 bytes
-            req_header = recv_all(connectionSocket, 10)
-            obu_id_bytes, obu_pqc_pub_len = struct.unpack('!8sBH', req_header)
-            obu_id = obu_id_bytes.rstrip(b'\x00').decode('utf-8')
+            # | 識別碼 (1 byte) | OBU ID (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes) | -> 不含識別碼 11 bytes
+            req_header = recv_all(connectionSocket, 11)
+            obu_id_raw, obu_ecc_pub_len, obu_pqc_pub_len = struct.unpack('!8sBH', req_header)
+            obu_id = obu_id_raw.rstrip(b'\x00').decode('utf-8')
             print(f"已接收到 OBU {obu_id} 的請求")
 
-            R_U_bytes = recv_all(connectionSocket, 33)
+            obu_ecc_pub = recv_all(connectionSocket, obu_ecc_pub_len)
             obu_pqc_pub = recv_all(connectionSocket, obu_pqc_pub_len)
 
-            reply = ca_process_enrollment(obu_id_bytes, R_U_bytes, obu_pqc_pub)
-
-            #cert = issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub)
-            #reply_header = struct.pack('!I', len(cert))
-            #reply = cert
+            cert = issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub)
+            reply_header = struct.pack('!I', len(cert))
+            reply = cert
         elif id_code == 0x67:   # RSU，只傳識別碼
             print(f"已接收到 RSU 的請求")
             with open('CA/keys/ca_ecc_pub.key', 'rb') as f:
