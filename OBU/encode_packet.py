@@ -3,9 +3,9 @@ from ecdsa import SigningKey, NIST256p
 from OBU.gen_payload import generate_srm_payload
 from ctypes import create_string_buffer
 
-def gen_packet(obu_id, known_RSU=False):
+def gen_packet(obu_id, intersection_id=1, known_RSU=False):
     # 1. 生成符合 SAE J2735 SEP2024 的最小化 SRM (Signal Request Message) Payload
-    payload = generate_srm_payload(obu_id)
+    payload = generate_srm_payload(obu_id, intersection_id=intersection_id)
     message = json.dumps(payload, separators=(',', ':')).encode('utf-8')
 
     # 2. 讀取 ECC 推導私鑰並進行簽章
