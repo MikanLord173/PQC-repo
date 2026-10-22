@@ -80,6 +80,23 @@ def inject_prewarm_cache(target_rsu_id: int, obu_id_raw: bytes, P_U_bytes: bytes
     update_key_cache(cache_key, vk, rsu_id=target_rsu_id, expire_at=expire_at)
     update_pqc_pub_cache(obu_id_raw, pqc_pub, rsu_id=target_rsu_id, expire_at=expire_at)
 
+def purge_obu_cache(obu_id, rsu_id=1):
+    """
+    清除單一車輛在指定路口的快取 (PQC 公鑰 + ECQV 重構公鑰)。
+    用於 Short 模式驗簽失敗：視為快取過期/不同步，清除後回 status=6 要求車輛以 Full 模式補憑證。
+    obu_id 可為字串 (如 "AMB-217") 或封包內的 8B 原始 ID (不足補 \\x00)。
+    """
+    if isinstance(obu_id, str):
+        obu_id_raw = obu_id.encode('utf-8').ljust(8, b'\x00')[:8]
+    else:
+        obu_id_raw = bytes(obu_id)
+
+    get_pqc_cache(rsu_id).pop(obu_id_raw, None)
+    # ECQV 公鑰快取以 (obu_id_raw, P_U) 為鍵，同一車可能有多個 P_U，全部清除
+    key_cache = get_key_cache(rsu_id)
+    for cache_key in [k for k in key_cache if k[0] == obu_id_raw]:
+        del key_cache[cache_key]
+
 def clear_all_caches(rsu_id=None):
     """清空快取 (供單元測試與環境重置使用)"""
     if rsu_id is None:
@@ -229,6 +246,10 @@ def parse_packet(packet, rsu_id=1):
       pqc_pub_len (2B) | pqc_pub | pqc_sig_len (2B) | pqc_sig
     """
     global LAST_VERIFIED_AUTH, LAST_PARSE_STATUS
+    # 【修正】每次解析前重設狀態，避免沿用上一個封包的結果。
+    # 否則 ECC 驗簽失敗或解析例外 (未設定狀態的失敗路徑) 會殘留前一包的 FULL_SIG_FAIL，
+    # 導致 RSU 誤將無辜車輛加入密碼學硬黑名單。
+    LAST_PARSE_STATUS = "PENDING"
     try:
         end = 2
         msg_len = int(struct.unpack('!H', packet[:end])[0])
@@ -282,8 +303,8 @@ def parse_packet(packet, rsu_id=1):
                 print(f"PQC 公鑰雜湊不符，疑似偽造公鑰攻擊！(車輛: {obu_id_str})")
                 return None
 
-            # 驗證通過，安全存入記憶體快取 (Verify-then-Cache)
-            update_pqc_pub_cache(obu_id_raw, obu_pqc_pub, rsu_id=rsu_id)
+            # 【修正】此處僅完成雜湊綁定檢查，尚未驗證 ML-DSA / ECC 簽章，
+            # 因此不在這裡寫入快取；改到所有簽章驗證通過後才寫入 (真正的 Verify-then-Cache)。
 
         # 2. 提取 OBU 的 PQC 簽章
         start = end
@@ -314,9 +335,13 @@ def parse_packet(packet, rsu_id=1):
         else:
             vk = reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_pub_hash)
         if not vk.verify(obu_ecc_sig, payload_bytes, hashfunc=hashlib.sha256):
+            LAST_PARSE_STATUS = "ECC_SIG_FAIL"
             print(f"OBU ECC 簽章驗證失敗(車輛: {obu_id_str})")
             return None
         update_key_cache(cache_key, vk, rsu_id=rsu_id)
+        # Full 模式：ML-DSA-44 與 ECC 簽章皆已通過，此時才將 PQC 公鑰寫入快取 (Verify-then-Cache)
+        if not is_short_mode:
+            update_pqc_pub_cache(obu_id_raw, obu_pqc_pub, rsu_id=rsu_id)
 
         # 記錄已驗證認證資料供骨幹預熱使用
         LAST_VERIFIED_AUTH = {
@@ -332,5 +357,6 @@ def parse_packet(packet, rsu_id=1):
         return json.loads(payload_bytes.decode('utf-8'))
 
     except Exception as e:
+        LAST_PARSE_STATUS = "PARSE_ERROR"
         print(f"封包解析失敗：{e}")
         return None

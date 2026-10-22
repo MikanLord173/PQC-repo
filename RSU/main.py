@@ -1,4 +1,8 @@
 import socket, time, os
+# 【修正】process_fragment 解析 F1 時間戳需要模組層級的 json；
+# 原本只有函式內局部 import，導致 json.loads 丟 NameError 被 except 吃掉，
+# f1_ts 永遠等於 now → 「舊/重複 F1 去重」永遠不成立，重放的 F1 反而會取代合法會話。
+import json
 import RSU.parse as parse
 
 try:
@@ -82,6 +86,8 @@ IP_MAX_TRACKED           = 1000     # IP 限流字典上限（LRU 防記憶體�
 OBU_F1_WINDOW            = 1.0      # 已認證 OBU F1 滑動視窗（秒）
 OBU_F1_MAX_RATE          = 10       # 單一合法 OBU 每秒最高允許 10 次 F1（正常 1~2Hz，超過軟限流不封鎖）
 OBU_F1_MAX_TRACKED       = 500      # OBU 限流字典上限
+
+XOR_MAX_PARITY_CANDIDATES = 3       # 每個 XOR 會話最多保留的 FP 候選數 (FP 無雜湊承諾，需容納偽造 FP)
 
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -308,7 +314,9 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
             current_obu = session.get("obu_id", "AMB-217")
             # 若為 Short 模式驗簽失敗，視為快取不同步/損毀，清空該車公鑰快取
             if parse.LAST_PARSE_STATUS == "SHORT_SIG_FAIL":
-                parse.PURGE_OBU_CACHE(current_obu)
+                # 【修正】原呼叫的 parse.PURGE_OBU_CACHE 不存在 (AttributeError)，導致 status=6 送不出去，
+                # 而 OBU 逾時不再降級 → 車輛會卡死在 Short 模式。改呼叫 parse.purge_obu_cache 並指定本路口。
+                parse.purge_obu_cache(current_obu, rsu_id=current_rsu)
                 print(f"  -> [Short 模式簽章比對未過] 視為快取失效/金鑰不同步，已清除快取，不予封鎖。")
             
             nack_payload = generate_ssm_payload(
@@ -340,7 +348,7 @@ def _try_xor_recovery(session_key, session, addr, sock, rsu_id=None):
     current_rsu = rsu_id if rsu_id is not None else RSU_ID
     total_frags = session["total_frags"]
     fragments   = session["fragments"]
-    parity      = session["xor_parity_payload"]
+    parity_list = session["xor_parity_candidates"]
     f1_raw      = fragments[0]
 
     # F1 尚未通過 ECC 驗證前，不進行重組
@@ -365,39 +373,45 @@ def _try_xor_recovery(session_key, session, addr, sock, rsu_id=None):
         return
 
     # Case B：F2..FN 缺一片 + 已收 FP → XOR 還原
-    if n_recv_heavy == n_heavy - 1 and parity is not None:
+    if n_recv_heavy == n_heavy - 1 and parity_list:
         from fec import recover_xor_heavy
         import hashlib
         missing_idx = next(i for i in range(n_heavy) if i not in received_heavy)
         missing_seq = missing_idx + 2
-        packet = recover_xor_heavy(received_heavy, parity, n_heavy, f1_raw)
-        if packet is None:
-            print(f"[XOR] 修復計算失敗（長度不符），繼續等待")
-            return
-
-        # ───【關鍵防嫁禍：驗證還原分片雜湊】───
-        # 還原出的分片必須吻合 F1 承諾的 H(Fi)。若不吻合代表 FP 遭攻擊者偽造污染！
-        # 僅丟棄該無效會話，絕不懲罰合法車輛！
         exp_hashes = session.get("expected_hashes") or {}
         exp_h = exp_hashes.get(missing_seq)
-        if exp_h is not None:
-            # 從 packet 中提取還原出之 missing_seq 分片資料進行雜湊驗證
-            # packet = f1_raw + heavy_raw
-            # 計算 offset: f1_raw + 前面 missing_idx 個分片長度
-            offset = len(f1_raw)
-            for i in range(missing_idx):
-                offset += len(received_heavy[i])
-            # missing 分片長度 = total - 其他分片
-            missing_frag_len = len(packet) - offset - sum(len(received_heavy[j]) for j in range(missing_idx + 1, n_heavy))
-            recovered_chunk = packet[offset : offset + missing_frag_len]
-            if hashlib.sha256(recovered_chunk).digest() != exp_h:
-                print(f"[XOR 污染攔截] 還原之 F{missing_seq} 雜湊與 F1 承諾不符！FP 遭偽造污染，丟棄會話 (不懲罰車輛)！")
-                del reassemble_buffer[session_key]
-                return
 
-        elapsed = (time.time() - session["start_time"]) * 1000 if session["start_time"] else 0
-        print(f"[XOR 修復成功] 來自 {addr}，F{missing_seq}/{total_frags} 已還原且雜湊承諾吻合 ({elapsed:.1f}ms)，進行密碼驗證")
-        _finalize_session(session_key, session, packet, addr, sock, rsu_id=current_rsu)
+        # 【修正】FP 不在 F1 雜湊承諾範圍內，任何人都能偽造。原本遇到污染的 FP 就刪除整個會話，
+        # 攻擊者只要搶先送一個假 FP 就能讓救護車的合法會話作廢 (Parity-Poisoning DoS)。
+        # 改為：逐一嘗試所有 FP 候選，雜湊不符者只淘汰該候選、保留會話，
+        # 繼續等待真正的 FP 或缺失分片本身 (Case A)。
+        for parity in list(parity_list):
+            packet = recover_xor_heavy(received_heavy, parity, n_heavy, f1_raw)
+            if packet is None:
+                print(f"[XOR] FP 候選修復計算失敗（長度不符），淘汰此候選")
+                parity_list.remove(parity)
+                continue
+
+            # ───【關鍵防嫁禍：驗證還原分片雜湊】───
+            # 還原出的分片必須吻合 F1 承諾的 H(Fi)。若不吻合代表 FP 遭攻擊者偽造污染！
+            if exp_h is not None:
+                # packet = f1_raw + heavy_raw
+                # 計算 offset: f1_raw + 前面 missing_idx 個分片長度
+                offset = len(f1_raw)
+                for i in range(missing_idx):
+                    offset += len(received_heavy[i])
+                # missing 分片長度 = total - 其他分片
+                missing_frag_len = len(packet) - offset - sum(len(received_heavy[j]) for j in range(missing_idx + 1, n_heavy))
+                recovered_chunk = packet[offset : offset + missing_frag_len]
+                if hashlib.sha256(recovered_chunk).digest() != exp_h:
+                    print(f"[XOR 污染攔截] 還原之 F{missing_seq} 雜湊與 F1 承諾不符！淘汰此偽造 FP，會話保留繼續等待 (不懲罰車輛)")
+                    parity_list.remove(parity)
+                    continue
+
+            elapsed = (time.time() - session["start_time"]) * 1000 if session["start_time"] else 0
+            print(f"[XOR 修復成功] 來自 {addr}，F{missing_seq}/{total_frags} 已還原且雜湊承諾吻合 ({elapsed:.1f}ms)，進行密碼驗證")
+            _finalize_session(session_key, session, packet, addr, sock, rsu_id=current_rsu)
+            return
 
 
 # 處理收到的分片
@@ -437,7 +451,7 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
             "total_frags"      : total_frags,
             "fragments"        : [None] * total_frags,
             "expected_hashes"  : None,
-            "xor_parity_payload": None,
+            "xor_parity_candidates": [],  # FP 候選清單 (最多 XOR_MAX_PARITY_CANDIDATES 個)
             "created_at"       : now,
             "obu_id"           : None,   # DUP/XOR 模式 F1 驗證後填入
             "f1_timestamp"     : 0.0,
@@ -449,8 +463,11 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
 
     # ── seq_num == 0：XOR 修復分片 FP ──
     if seq_num == 0:
-        if session["xor_parity_payload"] is None:
-            session["xor_parity_payload"] = chunk_bytes
+        # 【修正】原本「先到先得」只收第一個 FP，攻擊者搶先送假 FP 就會擠掉真的 FP。
+        # 改為保留多個不重複的候選 (設上限防止灌 FP 耗 CPU)，由 _try_xor_recovery 以 F1 雜湊承諾篩選。
+        candidates = session["xor_parity_candidates"]
+        if chunk_bytes not in candidates and len(candidates) < XOR_MAX_PARITY_CANDIDATES:
+            candidates.append(chunk_bytes)
             if session["start_time"] is None:
                 session["start_time"] = time.time()
                 session["state"] = "REASSEMBLING"
