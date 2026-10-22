@@ -21,8 +21,8 @@ def get_next_id():
 def check_intersection(intersection_id):
     inter_key = str(intersection_id)
     if inter_key in saved_intersections:
-        # 快取有效期為 15 秒 (符合緊急車輛通過單一路口之時間跨度)
-        if time.time() - saved_intersections[inter_key] < 15.0:
+        # 快取有效期為 60 秒 (符合緊急車輛通過下游綠波路廊之時間跨度)
+        if time.time() - saved_intersections[inter_key] < 60.0:
             return True
         else:
             del saved_intersections[inter_key]
@@ -84,17 +84,15 @@ def send_heartbeat(obu_id, frequency, target_intersection=1, mode="dup"):
                                     inter_key = str(ack_inter_id)
                                     if inter_key in saved_intersections:
                                         del saved_intersections[inter_key]
-                                    print(f"[降級通知] 路口 {ack_inter_id} 要求補憑證 (status={st})，立即降級回 Full 模式！\n")
+                                    print(f"[降級通知] 路口 {ack_inter_id} 要求補憑證 (status={st})，已從白名單移除，下週期降級回 Full 模式！\n")
                                     break
             except socket.timeout:
                 if not is_known:
                     print(f"[提示] 未收到路口 {target_intersection} 的 SSM 核准回條 (可能空中掉包)，下一週期保持 Full 模式重試。\n")
                 else:
-                    # 在 Short 模式下若收不到回條，代表 RSU 可能重啟或快取丟失，主動降級回 Full 模式！
-                    inter_key = str(target_intersection)
-                    if inter_key in saved_intersections:
-                        del saved_intersections[inter_key]
-                    print(f"[警告] Short 模式未收到路口 {target_intersection} 回條 (RSU 可能快取丟失)，立即降級回 Full 模式重試！\n")
+                    # 【修降級條件】：逾時僅代表無線通道隨機掉包，不代表 RSU 快取丟失！
+                    # 依據安全策略：OBU 僅在收到 status=6 (Need Cert) 時才移除白名單；逾時則維持 Short 模式繼續重試！
+                    print(f"[提示] Short 模式未收到路口 {target_intersection} 回條 (無線通道隨機掉包)，維持 Short 模式重試。\n")
 
             time.sleep(frequency)
     except KeyboardInterrupt:

@@ -73,45 +73,99 @@ def trigger_inter_rsu_prewarm(current_rsu_id: int, obu_id_raw: bytes, P_U_bytes:
 
     return prewarmed_list
 
-# ─── 方案A：Per-ID Quota & Sliding Blacklist 配置 ──────────────────────────
-PER_ID_TIMEOUT_THRESHOLD = 3     # 某 ID 在 BLACKLIST_WINDOW 秒內超時 N 次 → 封鎖
-BLACKLIST_WINDOW     = 10.0     # 滑動視窗長度（秒）
-BLACKLIST_DURATION   = 30.0     # 封鎖持續時間（秒）
+# ─── 安全防護配置 ───────────────────────────────────────────────────────────
+BLACKLIST_DURATION       = 30.0     # 密碼學硬封鎖持續時間（秒，具 TTL 自動解除）
+IP_WINDOW                = 1.0      # 來源 IP 滑動視窗長度（秒）
+IP_MAX_PACKETS           = 50       # 單一來源 IP 每秒最高封包數（超過即丟棄，軟限流）
+IP_MAX_TRACKED           = 1000     # IP 限流字典上限（LRU 防記憶體耗盡）
+
+OBU_F1_WINDOW            = 1.0      # 已認證 OBU F1 滑動視窗（秒）
+OBU_F1_MAX_RATE          = 10       # 單一合法 OBU 每秒最高允許 10 次 F1（正常 1~2Hz，超過軟限流不封鎖）
+OBU_F1_MAX_TRACKED       = 500      # OBU 限流字典上限
+
 # ──────────────────────────────────────────────────────────────────────────
 
 # 重組緩衝區，key= (msg_id, addr)
-# value 為 session dict: {"state": ..., "start_time": ..., "total_frags": ..., "fragments": [...], "created_at": ..., "obu_id": ...}
+# value 為 session dict: {"state": ..., "start_time": ..., "total_frags": ..., "fragments": [...], "created_at": ..., "obu_id": ..., "f1_timestamp": ...}
 reassemble_buffer = {}
 
 # 最近已完成重組的 (msg_id, addr)，避免尾巴重複分片再次觸發新 session
 recent_completed = {}
 
-# ─── 方案A：Per-ID 活躍 session 索引 & Sliding Blacklist ──────────────────
+# ─── 活躍會話索引 & 密碼學硬黑名單 ──────────────────────────────────────────
 # id_active_session[obu_id] = session_key  →  快速查詢該 ID 當前佔用的 session
 id_active_session = {}
 
-# id_timeout_log[obu_id] = [timestamp, ...]  →  滑動視窗超時紀錄
-id_timeout_log = {}
+# id_session_meta[obu_id] = {"msg_id": ..., "f1_timestamp": ...}  →  防重放與會話搶佔判定
+id_session_meta = {}
 
-# blacklist[obu_id] = ban_until_timestamp
+# 來源 IP 軟限流：ip_rate_log[ip_str] = [timestamp, ...] (OrderedDict 實作 LRU)
+from collections import OrderedDict
+ip_rate_log = OrderedDict()
+
+# 已認證 OBU F1 軟限流：obu_f1_rate_log[obu_id] = [timestamp, ...] (OrderedDict 實作 LRU)
+obu_f1_rate_log = OrderedDict()
+
+# 密碼學硬黑名單 (僅記錄有確鑿密碼學偽造證據的 obu_id): blacklist[obu_id] = ban_until
 blacklist = {}
 # ──────────────────────────────────────────────────────────────────────────
 
-# ─── 方案A 輔助：將某 obu_id 的超時紀錄加入滑動視窗，必要時封鎖 ────────────
-def _record_timeout_and_maybe_blacklist(obu_id: str, now: float):
-    """記錄一次該 obu_id 的超時事件，若在 BLACKLIST_WINDOW 內超時次數超過門檻，封鎖之。"""
-    log = id_timeout_log.setdefault(obu_id, [])
-    # 滑動：清除視窗外的舊事件
-    log[:] = [t for t in log if now - t < BLACKLIST_WINDOW]
-    log.append(now)
+def trigger_hard_blacklist(obu_id: str, reason: str, now: float = None):
+    """
+    【密碼學確鑿證據硬封鎖 (具 TTL)】
+    全系統「唯一」合法封鎖 obu_id 的條件：
+      - F1 已通過 ECC 簽章認證其合法身分
+      - 所有後續分片均符合 F1 承諾之 SHA-256 雜湊（攻擊者無法中間篡改）
+      - 重組後 ML-DSA-44 / ECQV 驗簽失敗！
+      證明只有真正持有私鑰的實體蓄意偽造後量子簽章。
+    """
+    if now is None:
+        now = time.time()
+    ban_until = now + BLACKLIST_DURATION
+    blacklist[obu_id] = ban_until
+    print(f"\n[安全防護 ⚠ 密碼學確鑿證據硬封鎖] 車輛 ID={obu_id} 原因: {reason}")
+    print(f"  → 確定持有金鑰主體惡意偽造，硬封鎖 {BLACKLIST_DURATION:.0f}s，直至 {time.strftime('%H:%M:%S', time.localtime(ban_until))}\n")
 
-    if len(log) >= PER_ID_TIMEOUT_THRESHOLD:
-        ban_until = now + BLACKLIST_DURATION
-        blacklist[obu_id] = ban_until
-        log.clear()  # 重置計數，避免反覆加成
-        print(f"[方案A ⚠ 黑名單] 車輛 ID={obu_id} 在 {BLACKLIST_WINDOW:.0f}s 內")
-        print(f"  連續超時 {PER_ID_TIMEOUT_THRESHOLD} 次（疑似惡意節點送不完整分片耗盡記憶體）")
-        print(f"  → 封鎖 {BLACKLIST_DURATION:.0f}s，直至 {time.strftime('%H:%M:%S', time.localtime(ban_until))}\n")
+def check_ip_rate_limit(ip_str: str, now: float) -> bool:
+    """
+    來源 IP 級別軟限流 (以 IP 為鍵，避免更換 port 繞過)。
+    使用 OrderedDict 維護上限 1,000 筆，防止攻擊者隨機造 IP 撐爆 RSU 記憶體。
+    回傳 True 表示允許通行，False 表示超額丟棄。
+    """
+    if ip_str in ip_rate_log:
+        ip_rate_log.move_to_end(ip_str)
+        log = ip_rate_log[ip_str]
+    else:
+        if len(ip_rate_log) >= IP_MAX_TRACKED:
+            ip_rate_log.popitem(last=False)  # 淘汰最舊的 IP
+        log = []
+        ip_rate_log[ip_str] = log
+
+    log[:] = [t for t in log if now - t < IP_WINDOW]
+    if len(log) >= IP_MAX_PACKETS:
+        return False  # 超過每秒 50 包，軟限流靜默丟棄
+    log.append(now)
+    return True
+
+def check_obu_f1_rate_limit(obu_id: str, now: float) -> bool:
+    """
+    已認證 OBU F1 軟限流：防止持有憑證的惡意節點狂發有效 F1 消耗 CPU 與記憶體。
+    超過 10 Hz 即靜默忽略，不加黑名單、不封鎖。
+    """
+    if obu_id in obu_f1_rate_log:
+        obu_f1_rate_log.move_to_end(obu_id)
+        log = obu_f1_rate_log[obu_id]
+    else:
+        if len(obu_f1_rate_log) >= OBU_F1_MAX_TRACKED:
+            obu_f1_rate_log.popitem(last=False)
+        log = []
+        obu_f1_rate_log[obu_id] = log
+
+    log[:] = [t for t in log if now - t < OBU_F1_WINDOW]
+    if len(log) >= OBU_F1_MAX_RATE:
+        return False
+    log.append(now)
+    return True
 
 # 定時檢查
 def prune_expired_sessions():
@@ -121,11 +175,11 @@ def prune_expired_sessions():
         if now - done_time > 2.0:
             del recent_completed[key]
 
-    # 清理已過期的黑名單條目
-    for obu_id in list(blacklist.keys()):
-        if now >= blacklist[obu_id]:
-            del blacklist[obu_id]
-            print(f"[方案A] 車輛 ID={obu_id} 黑名單已解除")
+    # 清理已過期的黑名單條目 (TTL 自動過期解除)
+    for identifier in list(blacklist.keys()):
+        if now >= blacklist[identifier]:
+            del blacklist[identifier]
+            print(f"[安全防護] 車輛 {identifier} 密碼學黑名單 TTL 已到期，自動解除封鎖")
 
     pruned_keys = []
     for key, session in list(reassemble_buffer.items()):
@@ -141,23 +195,27 @@ def prune_expired_sessions():
     for key, elapsed in pruned_keys:
         msg_id, addr = key
         session = reassemble_buffer[key]
-        obu_id = session.get("obu_id")  # 可能為 None（F1 尚未到達時）
+        obu_id = session.get("obu_id")  # 若 F1 通過 ECC 驗證則存在
         print(f"\n[超時清理] 訊息 ID={msg_id} [來自 {addr}] 逾時 ({elapsed*1000:.1f}ms > {PRUNING_TIMEOUT*1000:.0f}ms) 碎片不齊")
         print(f"清空快取，號誌維持正常週期")
         del reassemble_buffer[key]
 
-        # 方案A：清理 Per-ID 活躍 session 索引
-        if obu_id and id_active_session.get(obu_id) == key:
-            del id_active_session[obu_id]
-
-        # 方案A：記錄超時、判斷是否需要封鎖
+        # 清理 Per-ID 活躍 session 索引
         if obu_id:
-            _record_timeout_and_maybe_blacklist(obu_id, now)
+            if id_active_session.get(obu_id) == key:
+                del id_active_session[obu_id]
+            if obu_id in id_session_meta and id_session_meta[obu_id].get("msg_id") == msg_id:
+                del id_session_meta[obu_id]
+
+        # 【關鍵安全修復：黑名單策略】：
+        # 1. 通過 F1 ECC 驗證後才逾時的會話屬於「已認證的掉包」，絕不記懲罰封鎖！
+        #    防範重大漏洞：若逾時就懲罰，攻擊者重放救護車的 F1 (150ms 內有效) 卻不發後續分片，
+        #    即可蓄意誘發 RSU 逾時而使合法救護車被封鎖 (Replay-to-Block DoS 漏洞)。
+        # 2. 未通過 F1 驗證即逾時的匿名碎片堆積，直接釋放記憶體即可，由 IP 限流防範頻寬攻擊。
+        if obu_id:
+            print(f"  [已認證掉包] 車輛 ID={obu_id} 之 F1 已通過 ECC 認證，後續分片未達屬於自然通道衰落，不計懲罰封鎖。\n")
         else:
-            # F1 根本沒通過驗證就超時 → 亦計入警告（addr 作為匿名 key）
-            _record_timeout_and_maybe_blacklist(str(addr), now)
-            print(f"  [方案A] 匿名來源 {addr} 超時（F1 未通過驗證），計入警告視窗\n")
-        print()
+            print(f"  [未認證超時] 匿名來源 {addr} 超時（F1 未通過驗證），清除碎片暫存。\n")
 
 # ─── 共用：重組完成後的密碼驗證與 SSM 回條（DUP 與 XOR 兩個路徑共用）─────────
 def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
@@ -165,10 +223,13 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
     current_rsu = rsu_id if rsu_id is not None else RSU_ID
     del reassemble_buffer[session_key]
     recent_completed[session_key] = time.time()
-    # 方案A：成功完成 → 清除 Per-ID 活躍 session 索引（正常完成不計超時）
+    # 清除 Per-ID 活躍 session 索引
     obu_id_done = session.get("obu_id")
-    if obu_id_done and id_active_session.get(obu_id_done) == session_key:
-        del id_active_session[obu_id_done]
+    if obu_id_done:
+        if id_active_session.get(obu_id_done) == session_key:
+            del id_active_session[obu_id_done]
+        if obu_id_done in id_session_meta:
+            del id_session_meta[obu_id_done]
 
     payload = parse.parse_packet(packet, rsu_id=current_rsu)
     if payload:
@@ -240,18 +301,30 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
     else:
         print(f"\n驗證失敗，拒絕通行")
         print(f"號誌維持正常週期\n")
-        # ─── 悲觀降級：若為 Short 模式 Cache Miss，回傳 status=6 (Need Cert / Fallback) ───
-        if parse.LAST_PARSE_STATUS == "NEED_CERT" and sock is not None:
+        # ─── 悲觀降級：若為 Short 模式 Cache Miss 或 Short 驗簽失敗，回傳 status=6 (Need Cert / Fallback) ───
+        if parse.LAST_PARSE_STATUS in ("NEED_CERT", "SHORT_SIG_FAIL") and sock is not None:
             import json
             from RSU.gen_payload import generate_ssm_payload
+            current_obu = session.get("obu_id", "AMB-217")
+            # 若為 Short 模式驗簽失敗，視為快取不同步/損毀，清空該車公鑰快取
+            if parse.LAST_PARSE_STATUS == "SHORT_SIG_FAIL":
+                parse.PURGE_OBU_CACHE(current_obu)
+                print(f"  -> [Short 模式簽章比對未過] 視為快取失效/金鑰不同步，已清除快取，不予封鎖。")
+            
             nack_payload = generate_ssm_payload(
-                obu_id=session.get("obu_id", "AMB-217"),
+                obu_id=current_obu,
                 intersection_id=current_rsu,
                 status=6
             )
             nack_bytes = json.dumps(nack_payload, separators=(',', ':')).encode('utf-8')
             sock.sendto(nack_bytes, addr)
-            print(f"  -> 已向車輛發送 Fast-NACK (status=6，要求補憑證退回 Full 模式重試)\n")
+            print(f"  -> 已向車輛發送 Fast-NACK (status=6，要求降級退回 Full 模式重試)\n")
+        elif parse.LAST_PARSE_STATUS == "FULL_SIG_FAIL":
+            # 密碼學證據：Full 模式下憑證與 pk_pqc 均附帶且通過 ECQV 綁定，但 ML-DSA 驗簽失敗
+            violator = session.get("obu_id") or str(addr)
+            trigger_hard_blacklist(violator, "Full 模式下 ML-DSA-44 重組簽章驗證失敗 (強證據：偽造後量子簽章)")
+        else:
+            print(f"  -> 未知驗證失敗狀態 ({parse.LAST_PARSE_STATUS})，丟棄處理且不予封鎖。")
 
 
 # ─── XOR 模式：修復嘗試 ────────────────────────────────────────────────────────
@@ -294,20 +367,49 @@ def _try_xor_recovery(session_key, session, addr, sock, rsu_id=None):
     # Case B：F2..FN 缺一片 + 已收 FP → XOR 還原
     if n_recv_heavy == n_heavy - 1 and parity is not None:
         from fec import recover_xor_heavy
+        import hashlib
         missing_idx = next(i for i in range(n_heavy) if i not in received_heavy)
         missing_seq = missing_idx + 2
         packet = recover_xor_heavy(received_heavy, parity, n_heavy, f1_raw)
         if packet is None:
             print(f"[XOR] 修復計算失敗（長度不符），繼續等待")
             return
+
+        # ───【關鍵防嫁禍：驗證還原分片雜湊】───
+        # 還原出的分片必須吻合 F1 承諾的 H(Fi)。若不吻合代表 FP 遭攻擊者偽造污染！
+        # 僅丟棄該無效會話，絕不懲罰合法車輛！
+        exp_hashes = session.get("expected_hashes") or {}
+        exp_h = exp_hashes.get(missing_seq)
+        if exp_h is not None:
+            # 從 packet 中提取還原出之 missing_seq 分片資料進行雜湊驗證
+            # packet = f1_raw + heavy_raw
+            # 計算 offset: f1_raw + 前面 missing_idx 個分片長度
+            offset = len(f1_raw)
+            for i in range(missing_idx):
+                offset += len(received_heavy[i])
+            # missing 分片長度 = total - 其他分片
+            missing_frag_len = len(packet) - offset - sum(len(received_heavy[j]) for j in range(missing_idx + 1, n_heavy))
+            recovered_chunk = packet[offset : offset + missing_frag_len]
+            if hashlib.sha256(recovered_chunk).digest() != exp_h:
+                print(f"[XOR 污染攔截] 還原之 F{missing_seq} 雜湊與 F1 承諾不符！FP 遭偽造污染，丟棄會話 (不懲罰車輛)！")
+                del reassemble_buffer[session_key]
+                return
+
         elapsed = (time.time() - session["start_time"]) * 1000 if session["start_time"] else 0
-        print(f"[XOR 修復成功] 來自 {addr}，F{missing_seq}/{total_frags} 已還原 ({elapsed:.1f}ms)，進行密碼驗證")
+        print(f"[XOR 修復成功] 來自 {addr}，F{missing_seq}/{total_frags} 已還原且雜湊承諾吻合 ({elapsed:.1f}ms)，進行密碼驗證")
         _finalize_session(session_key, session, packet, addr, sock, rsu_id=current_rsu)
 
 
 # 處理收到的分片
 def process_fragment(data, addr, sock=None, rsu_id=None):
     current_rsu = rsu_id if rsu_id is not None else RSU_ID
+    now = time.time()
+
+    # 1. 來源 IP 軟限流 (以 IP 為鍵，上限 1000 筆 LRU，防止換 port 攻擊與記憶體耗盡)
+    ip_str = addr[0]
+    if not check_ip_rate_limit(ip_str, now):
+        return  # 單一來源 IP 超過限流閾值，靜默丟棄
+
     header_bytes = data[:4]
     chunk_bytes  = data[4:]
     # parse_header 現在回傳 4-tuple（is_xor 旗標由 total_frags byte 高位元決定）
@@ -336,8 +438,9 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
             "fragments"        : [None] * total_frags,
             "expected_hashes"  : None,
             "xor_parity_payload": None,
-            "created_at"       : time.time(),
-            "obu_id"           : None,   # 方案A：DUP/XOR 模式 F1 驗證後填入
+            "created_at"       : now,
+            "obu_id"           : None,   # DUP/XOR 模式 F1 驗證後填入
+            "f1_timestamp"     : 0.0,
         }
     session = reassemble_buffer[session_key]
     # 若後續分片帶有 XOR 旗標，補充標記（應對 parity 先到的情況）
@@ -358,37 +461,56 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
     # ── 1. 收到 F1 碎片 (首分片) ──
     if seq_num == 1:
         if session["fragments"][0] is None:
-            f1_valid, obu_id_str, _, exp_hashes, raw_f1 = parse.verify_f1_ecc(chunk_bytes, rsu_id=current_rsu)
+            f1_valid, obu_id_str, payload_bytes, exp_hashes, raw_f1 = parse.verify_f1_ecc(chunk_bytes, rsu_id=current_rsu)
             if f1_valid:
-                now = time.time()
+                # 提取 F1 時間戳 (用於防重放與取代舊會話)
+                f1_ts = 0.0
+                try:
+                    f1_ts = json.loads(payload_bytes.decode('utf-8')).get("full_timestamp", now)
+                except Exception:
+                    f1_ts = now
 
-                # ─── 方案A：黑名單檢查 ────────────────────────────────────────
+                # ─── 密碼學硬黑名單檢查 (車輛 ID 具 TTL，只有重組後 ML-DSA 失敗會被記) ───
                 if obu_id_str in blacklist:
                     ban_until = blacklist[obu_id_str]
                     if now < ban_until:
                         remaining = ban_until - now
-                        print(f"[方案A 拒絕] 車輛 {obu_id_str} 在黑名單中，剩餘封鎖 {remaining:.1f}s")
+                        print(f"[安全防護 拒絕] 車輛 {obu_id_str} 處於密碼學確鑿證據硬封鎖中，剩餘 {remaining:.1f}s")
                         del reassemble_buffer[session_key]
                         return
                     else:
                         del blacklist[obu_id_str]
 
-                # ─── 方案A：Per-ID Quota 檢查 ─────────────────────────────────
+                # ─── 4. 已認證 OBU F1 軟限流 (防止惡意合法節點狂發 F1 消耗 CPU，超過 10Hz 靜默丟棄) ───
+                if not check_obu_f1_rate_limit(obu_id_str, now):
+                    del reassemble_buffer[session_key]
+                    return
+
+                # ─── 3. 解決每車 1 會話與重放問題：去重與新取代舊 ───
                 existing_key = id_active_session.get(obu_id_str)
                 if existing_key is not None and existing_key != session_key:
-                    if existing_key in reassemble_buffer:
-                        print(f"[方案A Quota] 車輛 {obu_id_str} 已有活躍 session，拒絕第二個")
+                    old_meta = id_session_meta.get(obu_id_str, {})
+                    old_ts = old_meta.get("f1_timestamp", 0.0)
+
+                    # 若收到相同的 F1 (相同時間戳或舊時間戳) → 視為重放攻擊/重複分片，直接忽略不開新會話
+                    if f1_ts <= old_ts:
+                        print(f"[安全防護 去重] 車輛 {obu_id_str} 收到重複或舊 F1 (ts={f1_ts:.3f} <= {old_ts:.3f})，忽略重複會話")
                         del reassemble_buffer[session_key]
                         return
                     else:
-                        del id_active_session[obu_id_str]
+                        # 較新的合法 F1 到達 → 直接取代並釋放舊的未完成會話！
+                        print(f"[安全防護 取代] 車輛 {obu_id_str} 傳來更新之 F1 (ts={f1_ts:.3f} > {old_ts:.3f})，主動取代舊會話")
+                        if existing_key in reassemble_buffer:
+                            del reassemble_buffer[existing_key]
 
                 session["start_time"]     = now
                 session["state"]          = "REASSEMBLING"
                 session["expected_hashes"]= exp_hashes
                 session["fragments"][0]   = raw_f1
                 session["obu_id"]         = obu_id_str
+                session["f1_timestamp"]   = f1_ts
                 id_active_session[obu_id_str] = session_key
+                id_session_meta[obu_id_str] = {"msg_id": msg_id, "f1_timestamp": f1_ts}
                 print(f"[來自 {addr}] 車輛 {obu_id_str} F1 ECC 驗證通過，進入預備放行 (閃黃燈)，啟動 {PRUNING_TIMEOUT*1000:.0f}ms 計時器")
 
                 # 【UDP 亂序自癒】：回溯檢查在 F1 之前就先到達並暫存的後續分片
@@ -398,17 +520,17 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
                     if frag_data is not None and s_idx + 1 in exp_hashes:
                         calc_h = hashlib.sha256(frag_data).digest()
                         if calc_h != exp_hashes[s_idx + 1]:
-                            print(f"[防 DoS 注入攔截] 先前暫存之分片 {s_idx+1} 雜湊不符！清除惡意會話！")
-                            del reassemble_buffer[session_key]
-                            if id_active_session.get(obu_id_str) == session_key:
-                                del id_active_session[obu_id_str]
-                            return
+                            # 認證前雜湊不符：丟棄偽造分片，不封鎖 obu_id (避免攻擊者隨意注入偽造分片使救護車被鎖)
+                            print(f"[防 DoS 注入攔截] 暫存之分片 {s_idx+1} 雜湊不符！丟棄偽造分片！")
+                            session["fragments"][s_idx] = None
 
                 # 若為 XOR 模式，嘗試重組（應對 FP/後續片先到的情況）
                 if session["mode"] == "xor":
                     _try_xor_recovery(session_key, session, addr, sock, rsu_id=current_rsu)
             else:
-                print(f"[來自 {addr}] F1 ECC 驗證失敗，拒絕閃黃燈，清除暫存")
+                # 認證前失敗 (F1 驗簽失敗)：宣稱的 obu_id 未經認證，任何人皆能填寫。
+                # 僅丟棄該無效封包與會話，絕不封鎖 obu_id (徹底杜絕偽造 ID 嫁禍封鎖救護車之漏洞)！
+                print(f"[來自 {addr}] F1 ECC 驗證失敗，拒絕閃黃燈，清除無效暫存 (不封鎖聲稱之 ID: {obu_id_str})")
                 del reassemble_buffer[session_key]
                 return
         else:
@@ -426,6 +548,7 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
             if expected_h is not None:
                 calc_h = hashlib.sha256(chunk_bytes).digest()
                 if calc_h != expected_h:
+                    # 認證前雜湊不符：單純丟棄該分片，絕不封鎖 obu_id (攻擊者可任意廣播假 F2)
                     print(f"\n[防 DoS 注入攔截] 偽造分片 ({seq_num}/{total_frags})！雜湊不符，立即丟棄！")
                     return
 

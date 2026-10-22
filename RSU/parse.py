@@ -259,8 +259,9 @@ def parse_packet(packet, rsu_id=1):
         start = end
         end += 2
         pqc_pub_len = int(struct.unpack('!H', packet[start:end])[0])
+        is_short_mode = (pqc_pub_len == 0)
         
-        if pqc_pub_len == 0:
+        if is_short_mode:
             # 二次通訊 (Short 模式)：從記憶體快取還原 PQC 公鑰
             obu_pqc_pub = query_pqc_pub_cache(obu_id_raw, rsu_id=rsu_id)
             if obu_pqc_pub is not None:
@@ -277,6 +278,7 @@ def parse_packet(packet, rsu_id=1):
 
             # 1. 雜湊綁定檢查 (防 DoS 注入攻擊)：檢查完整公鑰是否吻合 F1 裡的 pqc_pub_hash
             if hashlib.sha256(obu_pqc_pub).digest() != pqc_pub_hash:
+                LAST_PARSE_STATUS = "PQC_PUB_HASH_MISMATCH"
                 print(f"PQC 公鑰雜湊不符，疑似偽造公鑰攻擊！(車輛: {obu_id_str})")
                 return None
 
@@ -294,7 +296,14 @@ def parse_packet(packet, rsu_id=1):
         # 3. 驗證 OBU 的 PQC 簽章 (ML-DSA-44 抗量子安全)
         with oqs.Signature(PQC_SIG_NAME) as verifier:
             if not verifier.verify(payload_bytes, obu_pqc_sig, obu_pqc_pub):
-                print(f"OBU 後量子簽章驗證失敗！(車輛: {obu_id_str})")
+                if is_short_mode:
+                    # Short 模式公鑰來自本地快取，快取若不同步或損毀可能導致失敗，不可斷定為惡意
+                    LAST_PARSE_STATUS = "SHORT_SIG_FAIL"
+                    print(f"OBU Short 模式後量子簽章驗證失敗 (可能是快取過期/不同步)！(車輛: {obu_id_str})")
+                else:
+                    # Full 模式公鑰經由 F1 雜湊綁定承諾，簽章失敗構成強偽造證據
+                    LAST_PARSE_STATUS = "FULL_SIG_FAIL"
+                    print(f"OBU Full 模式後量子簽章驗證失敗！(車輛: {obu_id_str})")
                 return None
 
         # 驗證 OBU 的 ECC 簽章
