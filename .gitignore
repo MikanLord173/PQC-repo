@@ -7,6 +7,8 @@ CA/cert/
 OBU/cert/
 
 *.json
+# 例外：保留模擬實驗參數，供重現實驗結果
+!sim/results/*/params.json
 *.jsonl
 OBU/json/
 rsu_traffic.jsonl

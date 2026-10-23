@@ -44,6 +44,8 @@
   cdf_time_to_green.csv     觸發綠燈耗時 CDF (分母為全部趟次，曲線上限即成功率)
   attempts_distribution.csv 觸發成功前嘗試次數分布
   channel_profile.csv       各環境下 BER / PER / 空中延遲隨距離與分片大小的變化
+  params.json               本次實驗完整參數 (指令、git commit、通道/運算耗時設定)，供重現
+  未指定 --out 時，自動輸出至 sim/results/ 底下下一個未使用的編號資料夾 (1, 2, 3...)。
 
 用法 (於專案根目錄)：
   python3 -m sim.trip_sim --distance 300 --speed 60 --interval 1.0
@@ -609,6 +611,41 @@ def _channel_profile(args, samples, envs):
     return rows
 
 
+def _next_run_dir(base="sim/results"):
+    """回傳 base 底下下一個未使用的編號資料夾 (現有最大編號 + 1，從 1 開始)。"""
+    used = [int(n) for n in os.listdir(base) if n.isdigit()] if os.path.isdir(base) else []
+    return os.path.join(base, str(max(used, default=0) + 1))
+
+
+def _git_commit():
+    try:
+        import subprocess
+        # --dirty：工作區有未 commit 的修改時加上 -dirty 標記，避免誤以為結果對應該 commit 的程式碼
+        return subprocess.run(["git", "describe", "--always", "--dirty"], capture_output=True, text=True).stdout.strip()
+    except Exception:
+        return ""
+
+
+def _write_params(args, costs_ms, argv, elapsed_s=None):
+    """將本次實驗參數 (含預設值與實際生效的 BER / 延遲 / 運算耗時) 存成 params.json，供日後重現。"""
+    params = {
+        "command"    : " ".join(["python3 -m sim.trip_sim", *argv]),
+        "git_commit" : _git_commit(),
+        "run_at"     : _real_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "elapsed_s"  : round(elapsed_s, 1) if elapsed_s is not None else None,
+        **{k: v for k, v in vars(args).items() if k not in ("ber", "queue_ms", "costs_ms", "calibrate")},
+        "calibrated" : args.calibrate,
+        "ber_ref"    : args.ber,
+        "queue_ms"   : args.queue_ms,
+        "costs_ms"   : {k: round(v, 4) for k, v in costs_ms.items()},
+        "constants"  : {"link_overhead_bytes": LINK_OVERHEAD, "slot_us": SLOT * 1e6, "sifs_us": SIFS * 1e6,
+                        "aifsn": AIFSN, "cw_min": CW_MIN, "preamble_us": T_PREAMBLE * 1e6,
+                        "ge_ref_size_bytes": GE_REF_SIZE, "obu_id": OBU_ID, "rsu_id": RSU_ID},
+    }
+    with open(os.path.join(args.out, "params.json"), "w", encoding="utf-8") as f:
+        json.dump(params, f, ensure_ascii=False, indent=2)
+
+
 def _kv_floats(s, defaults):
     out = dict(defaults)
     if s:
@@ -618,7 +655,7 @@ def _kv_floats(s, defaults):
     return out
 
 
-def main():
+def _build_parser():
     ap = argparse.ArgumentParser(description="單一路口緊急車輛通行 Monte Carlo 模擬")
     ap.add_argument("--distance",   type=float, default=300.0, help="OBU 出發點與 RSU (路口停止線) 距離，公尺 (預設 300)")
     ap.add_argument("--speed",      type=float, default=60.0,  help="OBU 固定車速，km/h (預設 60)")
@@ -643,14 +680,26 @@ def main():
     ap.add_argument("--costs-ms",   default="", help="覆寫運算耗時 ms，鍵：obu_gen,f1_verify,ecqv,full_verify")
     ap.add_argument("--calibrate",  action="store_true", help="以本機實測中位數取代預設運算耗時 (結果會隨機器變動)")
     ap.add_argument("--jobs",       type=int, default=os.cpu_count() or 1, help="平行行程數 (預設 CPU 核心數)")
-    ap.add_argument("--out",        default="sim/results", help="CSV 輸出目錄 (預設 sim/results)")
-    args = ap.parse_args()
+    ap.add_argument("--out",        default=None,
+                    help="CSV 輸出目錄 (預設為 sim/results/ 底下下一個未使用的編號資料夾，如 sim/results/2)")
+    return ap
 
+
+def _resolve_args(argv):
+    """解析命令列並補齊衍生參數，回傳 (args, costs_ms)。"""
+    args = _build_parser().parse_args(argv)
+    if args.out is None:
+        args.out = _next_run_dir()
     args.speed_mps = args.speed / 3.6
     args.ber       = _kv_floats(args.ber, DEFAULT_BER_REF)
     args.queue_ms  = _kv_floats(args.queue_ms, DEFAULT_QUEUE_MS)
     costs_ms       = calibrate() if args.calibrate else dict(DEFAULT_COSTS_MS)
     costs_ms       = _kv_floats(args.costs_ms, costs_ms)
+    return args, costs_ms
+
+
+def main():
+    args, costs_ms = _resolve_args(sys.argv[1:])
     envs, channels, packets, modes = (s.split(",") for s in (args.envs, args.channels, args.packets, args.modes))
 
     os.makedirs(args.out, exist_ok=True)
@@ -688,7 +737,9 @@ def main():
     _write_csv(os.path.join(args.out, "cdf_time_to_green.csv"), cdf, CDF_HEADERS)
     _write_csv(os.path.join(args.out, "attempts_distribution.csv"), attempts, ATTEMPT_HEADERS)
     _write_csv(os.path.join(args.out, "channel_profile.csv"), _channel_profile(args, samples, envs), PROFILE_HEADERS)
-    print(f"完成 ({_real_time.perf_counter() - t0:.1f}s)，CSV 已輸出至 {args.out}/")
+    elapsed = _real_time.perf_counter() - t0
+    _write_params(args, costs_ms, sys.argv[1:], elapsed)
+    print(f"完成 ({elapsed:.1f}s)，CSV 與 params.json 已輸出至 {args.out}/")
 
 
 if __name__ == "__main__":
