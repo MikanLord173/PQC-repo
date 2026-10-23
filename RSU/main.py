@@ -544,6 +544,14 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
                 # 若為 XOR 模式，嘗試重組（應對 FP/後續片先到的情況）
                 if session["mode"] == "xor":
                     _try_xor_recovery(session_key, session, addr, sock, rsu_id=current_rsu)
+                # 【修正】DUP/一般模式：主 F1 掉包、尾端備用 F1 最後才到時，後續分片早已收齊，
+                # 原本只有「收到 F2..FN」的分支會檢查是否收齊 → 會話永遠不會驗證，直到逾時被清除，
+                # 備用 F1 完全失去作用。F1 到達時也要檢查是否已收齊並進入驗證。
+                elif all(fragment is not None for fragment in session["fragments"]):
+                    elapsed_reassembly = (time.time() - session["start_time"]) * 1000 if session["start_time"] else 0
+                    print(f"[來自 {addr}] F1 最後到達，已收齊 ID為 {msg_id} 的所有分片 ({elapsed_reassembly:.2f}ms)")
+                    packet = b''.join(session["fragments"])
+                    _finalize_session(session_key, session, packet, addr, sock, rsu_id=current_rsu)
             else:
                 # 認證前失敗 (F1 驗簽失敗)：宣稱的 obu_id 未經認證，任何人皆能填寫。
                 # 僅丟棄該無效封包與會話，絕不封鎖 obu_id (徹底杜絕偽造 ID 嫁禍封鎖救護車之漏洞)！
