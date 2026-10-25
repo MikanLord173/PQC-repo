@@ -572,19 +572,29 @@ def _message_samples():
     from OBU.encode_packet import gen_packet
     from OBU.fragment import make_fragments
     from fec import make_fragments_xor
+    import OBU.gen_payload as obu_gen
     out = {}
-    with contextlib.redirect_stdout(io.StringIO()):
-        for p in PACKET_TYPES:
-            pkt = gen_packet(OBU_ID, intersection_id=RSU_ID, known_RSU=(p == "short"))
-            for m in MODES:
-                if m == "xor":
-                    data, parity = make_fragments_xor(pkt, 1)
-                    frags = data + [parity]
-                else:
-                    frags = make_fragments(pkt, 1)
-                    frags = frags + [frags[0]] if m == "dup" else frags
-                out[(p, m)] = {"msg_bytes": len(pkt), "frags": len(frags),
-                               "udp_bytes": sum(len(f) for f in frags), "sizes": [len(f) for f in frags]}
+    # SRM 的 second / full_timestamp / sequenceNumber 會影響 JSON 長度：
+    # 改用虛擬時鐘與固定種子取樣，使單則訊息大小每次執行都相同
+    real_time, obu_gen.time = obu_gen.time, VirtualClock()
+    rng_state = random.getstate()
+    random.seed(0)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            for p in PACKET_TYPES:
+                pkt = gen_packet(OBU_ID, intersection_id=RSU_ID, known_RSU=(p == "short"))
+                for m in MODES:
+                    if m == "xor":
+                        data, parity = make_fragments_xor(pkt, 1)
+                        frags = data + [parity]
+                    else:
+                        frags = make_fragments(pkt, 1)
+                        frags = frags + [frags[0]] if m == "dup" else frags
+                    out[(p, m)] = {"msg_bytes": len(pkt), "frags": len(frags),
+                                   "udp_bytes": sum(len(f) for f in frags), "sizes": [len(f) for f in frags]}
+    finally:
+        obu_gen.time = real_time
+        random.setstate(rng_state)
     return out
 
 
