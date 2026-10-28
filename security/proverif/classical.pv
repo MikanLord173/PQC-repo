@@ -1,0 +1,86 @@
+(* 情境 1：古典 Dolev-Yao 攻擊者 × 現行設計 (sim 分支 commit 86e284f)
+   - CA 註冊 (TCP 0x57) 不驗證申請者：任何人都能為任意 ID 取得 ECQV 憑證 (CAEnroll)
+   - 攻擊者另外控制任意數量「已合法註冊的非緊急車輛」(取得其全部私鑰)
+   - 下行 SSM 未簽章
+   - RSU 快取已預熱救護車 idA 的 PQC 公鑰 (有線骨幹)，因此 Short 封包可直接驗證 *)
+
+free skCA: skey [private].     (* CA ECC 根私鑰 d_CA *)
+free idA: bitstring.           (* 合法救護車 ID *)
+free puA: bitstring.           (* 救護車 ECQV 重構點 P_U *)
+free pskA: pqsk [private].     (* 救護車 ML-DSA-44 私鑰 *)
+
+(* 認證性：RSU 為 idA 觸發綠燈 / 閃黃燈，必然是 idA 本人送出同一則 SRM *)
+query m: bitstring; event(RSUGreen(idA, m)) ==> event(OBUSent(idA, m)).
+query m: bitstring; event(RSUYellow(idA, m)) ==> event(OBUSent(idA, m)).
+(* 注入式認證 (每則 SRM 至多觸發一次綠燈)：預期失敗 — 模型無時鐘，重放只能靠 150ms 時效限制 *)
+query m: bitstring; inj-event(RSUGreen(idA, m)) ==> inj-event(OBUSent(idA, m)).
+(* 私鑰保密性 *)
+query attacker(pskA).
+query attacker(skCA).
+(* 可用性：攻擊者能否讓合法救護車被加入硬黑名單 (預期可以：PQC 簽章不受 ECC 簽章保護) *)
+query event(Blacklist(idA)).
+(* 授權：觸發綠燈者必為 CA 註冊的緊急車輛 (預期失敗：憑證不含角色，RSU 信任 SRM 自稱的 role) *)
+query i: bitstring, m: bitstring; event(RSUGreen(i, m)) ==> event(EmergencyEnrolled(i)).
+(* 下行 SSM 真實性：OBU 接受的 SSM 必為 RSU 所送 (預期失敗：SSM 未簽章) *)
+query i: bitstring, st: bitstring; event(OBUAcceptSSM(i, st)) ==> event(RSUSentSSM(i, st)).
+
+(* pkpart：Full 封包帶完整 PQC 公鑰，Short 封包帶 none *)
+let OBU(tag: bitstring, pkpart: bitstring, id: bitstring, sk: skey, pu: bitstring, psk: pqsk) =
+  new ts: bitstring;
+  let m = (id, ts, ambulance) in
+  event OBUSent(id, m);
+  out(c, (tag, m, esign(m, sk), id, pu, h(ppk(psk)), pkpart, psign(m, psk))).
+
+let RSU(qca: pkey) =
+  in(c, (tag: bitstring, m: bitstring, esig: bitstring, id: bitstring, pu: bitstring,
+         hq: bitstring, pkin: bitstring, psig: bitstring));
+  let (mid: bitstring, ts: bitstring, role: bitstring) = m in
+  if role = ambulance then
+  (* F1：ECQV 重構 Q_U + ECDSA 驗簽 → 閃黃燈 *)
+  if everifyQ(esig, m, qca, id, hq, pu) = true then
+  event RSUYellow(id, m);
+  if tag = full then (
+    if h(pkin) = hq then                          (* PQC 公鑰雜湊綁定 *)
+    let ok = pverify(psig, m, pkin) in (
+      insert pkCache(id, pkin);                   (* Verify-then-Cache *)
+      event RSUGreen(id, m);
+      event RSUSentSSM(id, granted);
+      out(c, (id, granted))                       (* 明文 SSM *)
+    ) else
+      event Blacklist(id)                         (* FULL_SIG_FAIL → 硬黑名單 *)
+  ) else if tag = short then (
+    get pkCache(=id, pkc) in (
+      let ok = pverify(psig, m, pkc) in
+        event RSUGreen(id, m);                    (* SHORT_SIG_FAIL → 清快取，不封鎖 *)
+        event RSUSentSSM(id, granted);
+        out(c, (id, granted))
+    ) else (
+      event RSUSentSSM(id, needcert);             (* 快取未命中 → status=6 *)
+      out(c, (id, needcert))
+    )
+  ).
+
+(* OBU 接收 SSM：不驗證任何簽章 *)
+let OBURecv =
+  in(c, (i: bitstring, st: bitstring));
+  event OBUAcceptSSM(i, st).
+
+(* CA 註冊：不驗證申請者 (攻擊者提供 R_U 即可推得 d_U，模型直接交出隱式私鑰) *)
+let CAEnroll =
+  in(c, (i: bitstring, hq: bitstring, pu: bitstring));
+  out(c, ecqvSK(skCA, i, hq, pu)).
+
+(* 攻擊者控制的已註冊非緊急車輛：CA 正常簽發，私鑰全部交給攻擊者 *)
+let CorruptVehicle =
+  new idc: bitstring; new puc: bitstring; new pskc: pqsk;
+  out(c, (idc, puc, pskc, ecqvSK(skCA, idc, h(ppk(pskc)), puc))).
+
+process
+  let qca = eccpk(skCA) in
+  out(c, qca);
+  let pkA = ppk(pskA) in
+  let skA = ecqvSK(skCA, idA, h(pkA), puA) in
+  event EmergencyEnrolled(idA);
+  insert pkCache(idA, pkA);                       (* 有線骨幹預熱 *)
+  ( (!OBU(full, pkA, idA, skA, puA, pskA)) | (!OBU(short, none, idA, skA, puA, pskA))
+  | (!RSU(qca)) | (!CorruptVehicle) | (!OBURecv) | (!CAEnroll) )

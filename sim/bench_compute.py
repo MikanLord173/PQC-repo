@@ -77,7 +77,7 @@ def run(n):
 
     from CA.enroll import ca_process_enrollment
     from OBU.setup import generate_enrollment_request, obu_derive_key
-    from OBU.encode_packet import gen_packet
+    from OBU.encode_packet import gen_packet, load_cert
     from OBU.gen_payload import generate_srm_payload
     from OBU.fragment import make_fragments
     from fec import make_fragments_xor, recover_xor_heavy, _xor_layout
@@ -92,10 +92,7 @@ def run(n):
         ecc_sk = SigningKey.from_der(f.read())
     with open(f"OBU/keys/{OBU_ID}_pqc_priv.key", "rb") as f:
         pqc_priv = f.read()
-    with open(f"OBU/cert/{OBU_ID}_cert.bin", "rb") as f:
-        cert = f.read()
-    P_U_bytes = cert[:33]
-    pqc_pub   = cert[35:35 + struct.unpack('!H', cert[33:35])[0]]
+    P_U_bytes, role, pqc_pub, _ = load_cert(OBU_ID)
     pqc_hash  = hashlib.sha256(pqc_pub).digest()
 
     signer = oqs.Signature("ML-DSA-44")
@@ -105,26 +102,26 @@ def run(n):
     message  = json.dumps(generate_srm_payload(OBU_ID, intersection_id=RSU_ID), separators=(',', ':')).encode()
     ecc_sig  = ecc_sk.sign(message, hashfunc=hashlib.sha256)
     pqc_sig  = signer.sign(message)
-    vk       = parse.reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_hash)
+    vk       = parse.reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_hash, role)
 
     def fresh(short=False):
         return gen_packet(OBU_ID, intersection_id=RSU_ID, known_RSU=short)
 
     def reset_rsu(clear_cache=True):
-        for d in (rsu.reassemble_buffer, rsu.recent_completed, rsu.id_active_session, rsu.id_session_meta,
+        for d in (rsu.reassemble_buffer, rsu.recent_completed, rsu.recent_granted, rsu.id_active_session, rsu.id_session_meta,
                   rsu.ip_rate_log, rsu.obu_f1_rate_log, rsu.blacklist):
             d.clear()
         if clear_cache:
             parse.clear_all_caches()
 
     def prewarm():
-        parse.inject_prewarm_cache(RSU_ID, obu_id_raw, P_U_bytes, vk, pqc_pub, expire_at=None)
+        parse.inject_prewarm_cache(RSU_ID, obu_id_raw, P_U_bytes, vk, pqc_pub, expire_at=None, role=role)
 
     # ── 正確性檢查 (不計時)：ECQV 推導出的 d_U 必須與 RSU 重構的 Q_U 對應 ─────────
     k_U, R_U = generate_enrollment_request()
-    resp = ca_process_enrollment(obu_id_raw, R_U, pqc_pub)
-    d_U  = obu_derive_key(obu_id_raw, resp[:33], pqc_pub, int.from_bytes(resp[33:65], "big"), k_U)
-    q_u  = parse.reconstruct_obu_pubkey(obu_id_raw, resp[:33], pqc_hash)
+    resp = ca_process_enrollment(obu_id_raw, R_U, pqc_pub, role)
+    d_U  = obu_derive_key(obu_id_raw, resp[:33], pqc_pub, int.from_bytes(resp[33:65], "big"), k_U, role)
+    q_u  = parse.reconstruct_obu_pubkey(obu_id_raw, resp[:33], pqc_hash, role)
     assert (d_U * G).to_affine() == q_u.pubkey.point.to_affine(), "ECQV 正確性檢查失敗：d_U·G ≠ Q_U"
 
     items = []
@@ -136,7 +133,7 @@ def run(n):
 
     # ── 1. CA.enroll：產生 ECQV 資料 ─────────────────────────────────────────
     def prep_enroll(i):
-        return (obu_id_raw, generate_enrollment_request()[1], pqc_pub)
+        return (obu_id_raw, generate_enrollment_request()[1], pqc_pub, role)
     add(1, "ca_enroll", "CA ca_process_enrollment total (P_U, e, r; includes CA key file load)", "requested",
         measure(n, ca_process_enrollment, prep_enroll))
 
@@ -156,8 +153,8 @@ def run(n):
     # ── 2. OBU.setup：推導 d_U ───────────────────────────────────────────────
     def prep_derive(i):
         k_U, R_U = generate_enrollment_request()
-        resp = ca_process_enrollment(obu_id_raw, R_U, pqc_pub)
-        return (obu_id_raw, resp[:33], pqc_pub, int.from_bytes(resp[33:65], "big"), k_U)
+        resp = ca_process_enrollment(obu_id_raw, R_U, pqc_pub, role)
+        return (obu_id_raw, resp[:33], pqc_pub, int.from_bytes(resp[33:65], "big"), k_U, role)
     add(2, "obu_derive_d_u", "OBU obu_derive_key: d_U = (e*k_U + r) mod n (incl. SHA-256 of 1312B PQC pub)",
         "requested", measure(n, obu_derive_key, prep_derive))
     add(2, "obu_gen_request_r_u", "OBU generate_enrollment_request: k_U random, R_U = k_U*G", "overlooked",
@@ -188,7 +185,7 @@ def run(n):
 
     # ── 4. RSU reconstruct_obu_pubkey：Q_U = e·P_U + Q_CA ─────────────────────
     add(4, "rsu_reconstruct_q_u", "RSU parse.reconstruct_obu_pubkey total (includes CA pub key file load)",
-        "requested", measure(n, lambda: parse.reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_hash)))
+        "requested", measure(n, lambda: parse.reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_hash, role)))
 
     def load_ca_pub():
         with open("RSU/keys/ca_ecc_pub.key", "rb") as f:
@@ -352,7 +349,7 @@ def run(n):
                                                            prewarmed_rsus=[2, 3]), separators=(',', ':'))))
     with contextlib.redirect_stdout(io.StringIO()):
         add(0, "rsu_backhaul_prewarm", "RSU trigger_inter_rsu_prewarm to downstream RSUs (2 and 3)", "overlooked",
-            measure(n, lambda: rsu.trigger_inter_rsu_prewarm(RSU_ID, obu_id_raw, P_U_bytes, vk, pqc_pub)))
+            measure(n, lambda: rsu.trigger_inter_rsu_prewarm(RSU_ID, obu_id_raw, P_U_bytes, vk, pqc_pub, role=role)))
 
     # 端到端：整則訊息經過真實 process_fragment，直到送出綠燈 SSM
     def prep_e2e(short, mode):

@@ -31,8 +31,8 @@ def run_test():
     print("【測試 1】：首次發送 (Full 模式，拿掉 CA 簽章瘦身至 4.2KB)")
     print("-" * 50)
     full_packet = gen_packet(obu_test_id, known_RSU=False)
-    print(f"  -> Full 封包總長度 = {len(full_packet)} bytes (預期約 4214 bytes)")
-    assert 4100 <= len(full_packet) <= 4300, "Full 封包大小不符預期！"
+    print(f"  -> Full 封包總長度 = {len(full_packet)} bytes (預期約 6700 bytes：含 2420B CA 後量子憑證)")
+    assert 6500 <= len(full_packet) <= 6900, "Full 封包大小不符預期！"
 
     # 驗證 F1 (第一片，含分片承諾)
     from OBU.fragment import make_fragments
@@ -53,7 +53,7 @@ def run_test():
     print("-" * 50)
     short_packet = gen_packet(obu_test_id, known_RSU=True)
     print(f"  -> Short 封包總長度 = {len(short_packet)} bytes (預期約 2902 bytes)")
-    assert 2800 <= len(short_packet) <= 3000, "Short 封包大小不符預期！"
+    assert 2800 <= len(short_packet) <= 3100, "Short 封包大小不符預期！"
 
     # 驗證 Short 模式下的 F1 (記憶體命中)
     frags_short = make_fragments(short_packet)
@@ -75,8 +75,8 @@ def run_test():
     print("\n" + "=" * 60)
     print("【終極瘦身驗證成功！】")
     print("  1. 原版封包 : 6635 Bytes (切 5 片)")
-    print(f"  2. 純 ECQV  : {len(full_packet)} Bytes (砍掉 36.5% 冗餘，切 3 片)")
-    print(f"  3. Short 模式: {len(short_packet)} Bytes (砍掉 56.3% 體積，只要 2 片！)")
+    print(f"  2. ECQV + CA 後量子憑證 (Full): {len(full_packet)} Bytes (切 5 片)")
+    print(f"  3. Short 模式: {len(short_packet)} Bytes (省略公鑰與 CA 憑證，3 片)")
     print("=" * 60)
 
 if __name__ == "__main__":

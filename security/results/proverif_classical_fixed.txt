@@ -1,0 +1,459 @@
+Process 0 (that is, the initial process):
+{1}let qca: pkey = eccpk(skCA) in
+{2}let pkCApq: bitstring = ppk(pskCA) in
+{3}let pkR: pkey = rpk(skR) in
+{4}out(c, (qca,pkCApq,pkR));
+{5}insert registry(idA,ambulance);
+{6}let pkA: bitstring = ppk(pskA) in
+{7}let skA: skey = ecqvSK(skCA,(idA,ambulance),h(pkA),puA) in
+{8}let certA: bitstring = psign((idA,ambulance,h(pkA),puA),pskCA) in
+{9}event EmergencyEnrolled(idA);
+{10}insert pkCache(idA,pkA);
+(
+    {11}!
+    {12}let tag: bitstring = full in
+    {13}let id: bitstring = idA in
+    {14}let pu: bitstring = puA in
+    {15}let psk: pqsk = pskA in
+    {16}new ts: bitstring;
+    {17}let m: bitstring = (id,ts,ambulance) in
+    {18}let psig: bitstring = psign(m,psk) in
+    {19}event OBUSent(id,m);
+    {20}out(c, (tag,m,esign((m,h(psig)),skA),id,ambulance,pu,h(ppk(psk)),h(psig),pkA,certA,psig))
+) | (
+    {21}!
+    {22}let tag_1: bitstring = short in
+    {23}let pkpart: bitstring = none in
+    {24}let certpart: bitstring = none in
+    {25}let id_1: bitstring = idA in
+    {26}let pu_1: bitstring = puA in
+    {27}let psk_1: pqsk = pskA in
+    {28}new ts_1: bitstring;
+    {29}let m_1: bitstring = (id_1,ts_1,ambulance) in
+    {30}let psig_1: bitstring = psign(m_1,psk_1) in
+    {31}event OBUSent(id_1,m_1);
+    {32}out(c, (tag_1,m_1,esign((m_1,h(psig_1)),skA),id_1,ambulance,pu_1,h(ppk(psk_1)),h(psig_1),pkpart,certpart,psig_1))
+) | (
+    {33}!
+    {34}in(c, (tag_2: bitstring,m_2: bitstring,esig: bitstring,id_2: bitstring,crole: bitstring,pu_2: bitstring,hq: bitstring,hs: bitstring,pkin: bitstring,cert: bitstring,psig_2: bitstring));
+    {35}let (mid: bitstring,ts_2: bitstring,role: bitstring) = m_2 in
+    {36}if (crole = ambulance) then
+    {37}if (role = crole) then
+    {38}if (everifyQ(esig,(m_2,hs),qca,(id_2,crole),hq,pu_2) = true) then
+    {39}event RSUYellow(id_2,m_2);
+    {40}if (h(psig_2) = hs) then
+    {63}get grantedSRM(=id_2,=ts_2) in
+        0
+    else
+        {41}if (tag_2 = full) then
+        (
+            {42}if (h(pkin) = hq) then
+            {43}let okc: bool = pverify(cert,(id_2,crole,hq,pu_2),pkCApq) in
+            {44}let ok: bool = pverify(psig_2,m_2,pkin) in
+            (
+                {45}insert pkCache(id_2,pkin);
+                {46}insert grantedSRM(id_2,ts_2);
+                {47}event RSUGreen(id_2,m_2);
+                {48}let st: bitstring = granted in
+                {49}event RSUSentSSM(id_2,st);
+                {50}out(c, (id_2,st,rsign((id_2,st),skR)))
+            )
+            else
+                {51}event Blacklist(id_2)
+        )
+        else
+            {52}if (tag_2 = short) then
+            {62}get pkCache(=id_2,pkc: bitstring) suchthat (h(pkc) = hq) in
+            (
+                {53}let ok_1: bool = pverify(psig_2,m_2,pkc) in
+                {54}insert grantedSRM(id_2,ts_2);
+                {55}event RSUGreen(id_2,m_2);
+                {56}let st_1: bitstring = granted in
+                {57}event RSUSentSSM(id_2,st_1);
+                {58}out(c, (id_2,st_1,rsign((id_2,st_1),skR)))
+            )
+            else
+                {59}let st_2: bitstring = needcert in
+                {60}event RSUSentSSM(id_2,st_2);
+                {61}out(c, (id_2,st_2,rsign((id_2,st_2),skR)))
+) | (
+    {64}!
+    {65}new idc: bitstring;
+    {66}insert registry(idc,car);
+    {67}out(c, (idc,ekey(idc)))
+) | (
+    {68}!
+    {69}in(c, (i: bitstring,st_3: bitstring,sig: bitstring));
+    {70}if (rverify(sig,(i,st_3),pkR) = true) then
+    {71}event OBUAcceptSSM(i,st_3)
+) | (
+    {72}!
+    {73}in(c, (i_1: bitstring,hq_1: bitstring,pu_3: bitstring,t: bitstring));
+    {76}get registry(=i_1,r: bitstring) in
+    {74}if (t = mac(ekey(i_1),(i_1,hq_1,pu_3))) then
+    {75}out(c, (ecqvSK(skCA,(i_1,r),hq_1,pu_3),psign((i_1,r,hq_1,pu_3),pskCA)))
+)
+
+--  Process 1 (that is, process 0, with let moved downwards):
+{3}let pkR: pkey = rpk(skR) in
+{2}let pkCApq: bitstring = ppk(pskCA) in
+{1}let qca: pkey = eccpk(skCA) in
+{4}out(c, (qca,pkCApq,pkR));
+{5}insert registry(idA,ambulance);
+{9}event EmergencyEnrolled(idA);
+{6}let pkA: bitstring = ppk(pskA) in
+{10}insert pkCache(idA,pkA);
+{7}let skA: skey = ecqvSK(skCA,(idA,ambulance),h(pkA),puA) in
+(
+    {11}!
+    {16}new ts: bitstring;
+    {13}let id: bitstring = idA in
+    {17}let m: bitstring = (id,ts,ambulance) in
+    {19}event OBUSent(id,m);
+    {15}let psk: pqsk = pskA in
+    {18}let psig: bitstring = psign(m,psk) in
+    {14}let pu: bitstring = puA in
+    {12}let tag: bitstring = full in
+    {8}let certA: bitstring = psign((idA,ambulance,h(pkA),puA),pskCA) in
+    {20}out(c, (tag,m,esign((m,h(psig)),skA),id,ambulance,pu,h(ppk(psk)),h(psig),pkA,certA,psig))
+) | (
+    {21}!
+    {28}new ts_1: bitstring;
+    {25}let id_1: bitstring = idA in
+    {29}let m_1: bitstring = (id_1,ts_1,ambulance) in
+    {31}event OBUSent(id_1,m_1);
+    {27}let psk_1: pqsk = pskA in
+    {30}let psig_1: bitstring = psign(m_1,psk_1) in
+    {26}let pu_1: bitstring = puA in
+    {24}let certpart: bitstring = none in
+    {23}let pkpart: bitstring = none in
+    {22}let tag_1: bitstring = short in
+    {32}out(c, (tag_1,m_1,esign((m_1,h(psig_1)),skA),id_1,ambulance,pu_1,h(ppk(psk_1)),h(psig_1),pkpart,certpart,psig_1))
+) | (
+    {33}!
+    {34}in(c, (tag_2: bitstring,m_2: bitstring,esig: bitstring,id_2: bitstring,crole: bitstring,pu_2: bitstring,hq: bitstring,hs: bitstring,pkin: bitstring,cert: bitstring,psig_2: bitstring));
+    {35}let (mid: bitstring,ts_2: bitstring,role: bitstring) = m_2 in
+    {36}if (crole = ambulance) then
+    {37}if (role = crole) then
+    {38}if (everifyQ(esig,(m_2,hs),qca,(id_2,crole),hq,pu_2) = true) then
+    {39}event RSUYellow(id_2,m_2);
+    {40}if (h(psig_2) = hs) then
+    {63}get grantedSRM(=id_2,=ts_2) in
+        0
+    else
+        {41}if (tag_2 = full) then
+        (
+            {42}if (h(pkin) = hq) then
+            {43}let okc: bool = pverify(cert,(id_2,crole,hq,pu_2),pkCApq) in
+            {44}let ok: bool = pverify(psig_2,m_2,pkin) in
+            (
+                {45}insert pkCache(id_2,pkin);
+                {46}insert grantedSRM(id_2,ts_2);
+                {47}event RSUGreen(id_2,m_2);
+                {48}let st: bitstring = granted in
+                {49}event RSUSentSSM(id_2,st);
+                {50}out(c, (id_2,st,rsign((id_2,st),skR)))
+            )
+            else
+                {51}event Blacklist(id_2)
+        )
+        else
+            {52}if (tag_2 = short) then
+            {62}get pkCache(=id_2,pkc: bitstring) suchthat (h(pkc) = hq) in
+            (
+                {53}let ok_1: bool = pverify(psig_2,m_2,pkc) in
+                {54}insert grantedSRM(id_2,ts_2);
+                {55}event RSUGreen(id_2,m_2);
+                {56}let st_1: bitstring = granted in
+                {57}event RSUSentSSM(id_2,st_1);
+                {58}out(c, (id_2,st_1,rsign((id_2,st_1),skR)))
+            )
+            else
+                {59}let st_2: bitstring = needcert in
+                {60}event RSUSentSSM(id_2,st_2);
+                {61}out(c, (id_2,st_2,rsign((id_2,st_2),skR)))
+) | (
+    {64}!
+    {65}new idc: bitstring;
+    {66}insert registry(idc,car);
+    {67}out(c, (idc,ekey(idc)))
+) | (
+    {68}!
+    {69}in(c, (i: bitstring,st_3: bitstring,sig: bitstring));
+    {70}if (rverify(sig,(i,st_3),pkR) = true) then
+    {71}event OBUAcceptSSM(i,st_3)
+) | (
+    {72}!
+    {73}in(c, (i_1: bitstring,hq_1: bitstring,pu_3: bitstring,t: bitstring));
+    {76}get registry(=i_1,r: bitstring) in
+    {74}if (t = mac(ekey(i_1),(i_1,hq_1,pu_3))) then
+    {75}out(c, (ecqvSK(skCA,(i_1,r),hq_1,pu_3),psign((i_1,r,hq_1,pu_3),pskCA)))
+)
+
+-- Query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 125 rules (52 with conclusion selected). Queue: 25 rules.
+Starting query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))
+goal reachable: b-event(OBUSent(idA[],(idA[],ts_3,ambulance))) -> event(RSUGreen(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts_1[!1 = @sid]
+goal reachable: b-event(OBUSent(idA[],(idA[],ts_3,ambulance))) -> event(RSUGreen(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts[!1 = @sid]
+RESULT event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is true.
+-- Query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 125 rules (58 with conclusion selected). Queue: 17 rules.
+Starting query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))
+goal reachable: b-event(OBUSent(idA[],(idA[],ts_3,ambulance))) -> event(RSUYellow(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts_1[!1 = @sid]
+goal reachable: b-event(OBUSent(idA[],(idA[],ts_3,ambulance))) -> event(RSUYellow(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts[!1 = @sid]
+RESULT event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is true.
+-- Query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 124 rules (52 with conclusion selected). Queue: 32 rules.
+Starting query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3))
+goal reachable: @sid ≠ @sid_1 && attacker(pkin_1) && attacker(cert_1) && attacker(pkin_2) && attacker(cert_2) && b-inj-event(OBUSent(idA[],(idA[],ts_3,ambulance)),@occ31_1) -> inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1) && inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2)
+Abbreviations:
+ts_3 = ts_1[!1 = @sid_2]
+@occ55_1 = @occ55[pkc = ppk(pskA[]),psig_2 = psign((idA[],ts_3,ambulance),pskA[]),cert = cert_1,pkin = pkin_1,hs = h(psign((idA[],ts_3,ambulance),pskA[])),hq = h(ppk(pskA[])),pu_2 = puA[],crole = ambulance,id_2 = idA[],esig = esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),m_2 = (idA[],ts_3,ambulance),tag_2 = short,!1 = @sid]
+@occ55_2 = @occ55[pkc = ppk(pskA[]),psig_2 = psign((idA[],ts_3,ambulance),pskA[]),cert = cert_2,pkin = pkin_2,hs = h(psign((idA[],ts_3,ambulance),pskA[])),hq = h(ppk(pskA[])),pu_2 = puA[],crole = ambulance,id_2 = idA[],esig = esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),m_2 = (idA[],ts_3,ambulance),tag_2 = short,!1 = @sid_1]
+@occ31_1 = @occ31[!1 = @sid_2]
+
+Derivation:
+Abbreviations:
+ts_3 = ts_1[!1 = @sid]
+@occ55_1 = @occ55[pkc = ppk(pskA[]),psig_2 = psign((idA[],ts_3,ambulance),pskA[]),cert = cert_1,pkin = pkin_1,hs = h(psign((idA[],ts_3,ambulance),pskA[])),hq = h(ppk(pskA[])),pu_2 = puA[],crole = ambulance,id_2 = idA[],esig = esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),m_2 = (idA[],ts_3,ambulance),tag_2 = short,!1 = @sid_1]
+@occ55_2 = @occ55[pkc = ppk(pskA[]),psig_2 = psign((idA[],ts_3,ambulance),pskA[]),cert = cert_2,pkin = pkin_2,hs = h(psign((idA[],ts_3,ambulance),pskA[])),hq = h(ppk(pskA[])),pu_2 = puA[],crole = ambulance,id_2 = idA[],esig = esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),m_2 = (idA[],ts_3,ambulance),tag_2 = short,!1 = @sid_2]
+@occ31_1 = @occ31[!1 = @sid]
+
+1. The event OBUSent(idA[],(idA[],ts_3,ambulance)) (with occurrence name @occ31_1) may be executed at {31}.
+So the message (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])) may be sent to the attacker at output {32}.
+attacker((short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[]))).
+
+2. By 1, the attacker may know (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])).
+Using the function 11-proj-11-tuple the attacker may obtain psign((idA[],ts_3,ambulance),pskA[]).
+attacker(psign((idA[],ts_3,ambulance),pskA[])).
+
+3. We assume as hypothesis that
+attacker(cert_2).
+
+4. We assume as hypothesis that
+attacker(pkin_2).
+
+5. By 1, the attacker may know (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])).
+Using the function 8-proj-11-tuple the attacker may obtain h(psign((idA[],ts_3,ambulance),pskA[])).
+attacker(h(psign((idA[],ts_3,ambulance),pskA[]))).
+
+6. By 1, the attacker may know (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])).
+Using the function 7-proj-11-tuple the attacker may obtain h(ppk(pskA[])).
+attacker(h(ppk(pskA[]))).
+
+7. The attacker initially knows puA[].
+attacker(puA[]).
+
+8. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+9. The attacker initially knows idA[].
+attacker(idA[]).
+
+10. By 1, the attacker may know (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])).
+Using the function 3-proj-11-tuple the attacker may obtain esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])).
+attacker(esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[]))).
+
+11. By 1, the attacker may know (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),none,none,psign((idA[],ts_3,ambulance),pskA[])).
+Using the function 2-proj-11-tuple the attacker may obtain (idA[],ts_3,ambulance).
+attacker((idA[],ts_3,ambulance)).
+
+12. By 11, the attacker may know (idA[],ts_3,ambulance).
+Using the function 2-proj-3-tuple the attacker may obtain ts_3.
+attacker(ts_3).
+
+13. By 9, the attacker may know idA[].
+By 12, the attacker may know ts_3.
+By 8, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (idA[],ts_3,ambulance).
+attacker((idA[],ts_3,ambulance)).
+
+14. Using the function short the attacker may obtain short.
+attacker(short).
+
+15. By 14, the attacker may know short.
+By 13, the attacker may know (idA[],ts_3,ambulance).
+By 10, the attacker may know esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])).
+By 9, the attacker may know idA[].
+By 8, the attacker may know ambulance.
+By 7, the attacker may know puA[].
+By 6, the attacker may know h(ppk(pskA[])).
+By 5, the attacker may know h(psign((idA[],ts_3,ambulance),pskA[])).
+By 4, the attacker may know pkin_2.
+By 3, the attacker may know cert_2.
+By 2, the attacker may know psign((idA[],ts_3,ambulance),pskA[]).
+Using the function 11-tuple the attacker may obtain (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_2,cert_2,psign((idA[],ts_3,ambulance),pskA[])).
+attacker((short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_2,cert_2,psign((idA[],ts_3,ambulance),pskA[]))).
+
+16. The entry pkCache(idA[],ppk(pskA[])) may be inserted in a table at insert {10}.
+table(pkCache(idA[],ppk(pskA[]))).
+
+17. The message (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_2,cert_2,psign((idA[],ts_3,ambulance),pskA[])) that the attacker may have by 15 may be received at input {34}.
+The entry pkCache(idA[],ppk(pskA[])) that may be in a table by 16 may be read at get {62}.
+So event RSUGreen(idA[],(idA[],ts_3,ambulance)) may be executed at {55} in session @sid_2.
+inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2).
+
+18. By 17, inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2).
+The goal is reached, represented in the following fact:
+inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2).
+
+19. We assume as hypothesis that
+attacker(cert_1).
+
+20. We assume as hypothesis that
+attacker(pkin_1).
+
+21. By 14, the attacker may know short.
+By 13, the attacker may know (idA[],ts_3,ambulance).
+By 10, the attacker may know esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])).
+By 9, the attacker may know idA[].
+By 8, the attacker may know ambulance.
+By 7, the attacker may know puA[].
+By 6, the attacker may know h(ppk(pskA[])).
+By 5, the attacker may know h(psign((idA[],ts_3,ambulance),pskA[])).
+By 20, the attacker may know pkin_1.
+By 19, the attacker may know cert_1.
+By 2, the attacker may know psign((idA[],ts_3,ambulance),pskA[]).
+Using the function 11-tuple the attacker may obtain (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_1,cert_1,psign((idA[],ts_3,ambulance),pskA[])).
+attacker((short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_1,cert_1,psign((idA[],ts_3,ambulance),pskA[]))).
+
+22. The message (short,(idA[],ts_3,ambulance),esign(((idA[],ts_3,ambulance),h(psign((idA[],ts_3,ambulance),pskA[]))),ecqvSK(skCA[],(idA[],ambulance),h(ppk(pskA[])),puA[])),idA[],ambulance,puA[],h(ppk(pskA[])),h(psign((idA[],ts_3,ambulance),pskA[])),pkin_1,cert_1,psign((idA[],ts_3,ambulance),pskA[])) that the attacker may have by 21 may be received at input {34}.
+The entry pkCache(idA[],ppk(pskA[])) that may be in a table by 16 may be read at get {62}.
+So event RSUGreen(idA[],(idA[],ts_3,ambulance)) may be executed at {55} in session @sid_1.
+inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1).
+
+23. By 22, inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1).
+The goal is reached, represented in the following fact:
+inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1).
+
+24. By 23, inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1).
+By 18, inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2).
+We have @occ55_1 ≠ @occ55_2.
+The goals for injectivity are reached, combined in the following fact:
+inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_1) && inj-event(RSUGreen(idA[],(idA[],ts_3,ambulance)),@occ55_2).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, (~M,~M_1,~M_2)) with ~M = eccpk(skCA), ~M_1 = ppk(pskCA), ~M_2 = rpk(skR) at {4}
+
+insert registry(idA,ambulance) at {5}
+
+event EmergencyEnrolled(idA) at {9}
+
+insert pkCache(idA,ppk(pskA)) at {10}
+
+new ts_1: bitstring creating ts_4 at {28} in copy a
+
+event OBUSent(idA,(idA,ts_4,ambulance)) at {31} in copy a
+
+out(c, (~M_3,(~M_4,~M_5,~M_6),~M_7,~M_8,~M_9,~M_10,~M_11,~M_12,~M_13,~M_14,~M_15)) with ~M_3 = short, ~M_4 = idA, ~M_5 = ts_4, ~M_6 = ambulance, ~M_7 = esign(((idA,ts_4,ambulance),h(psign((idA,ts_4,ambulance),pskA))),ecqvSK(skCA,(idA,ambulance),h(ppk(pskA)),puA)), ~M_8 = idA, ~M_9 = ambulance, ~M_10 = puA, ~M_11 = h(ppk(pskA)), ~M_12 = h(psign((idA,ts_4,ambulance),pskA)), ~M_13 = none, ~M_14 = none, ~M_15 = psign((idA,ts_4,ambulance),pskA) at {32} in copy a
+
+in(c, (short,(idA,~M_5,ambulance),~M_7,idA,ambulance,puA,~M_11,~M_12,a_1,a_2,~M_15)) with ~M_5 = ts_4, ~M_7 = esign(((idA,ts_4,ambulance),h(psign((idA,ts_4,ambulance),pskA))),ecqvSK(skCA,(idA,ambulance),h(ppk(pskA)),puA)), ~M_11 = h(ppk(pskA)), ~M_12 = h(psign((idA,ts_4,ambulance),pskA)), ~M_15 = psign((idA,ts_4,ambulance),pskA) at {34} in copy a_3
+
+event RSUYellow(idA,(idA,ts_4,ambulance)) at {39} in copy a_3
+
+get grantedSRM(=idA,=ts_4): else branch taken at {63} in copy a_3
+
+get pkCache(idA,ppk(pskA)) at {62} in copy a_3
+
+in(c, (short,(idA,~M_5,ambulance),~M_7,idA,ambulance,puA,~M_11,~M_12,a_4,a_5,~M_15)) with ~M_5 = ts_4, ~M_7 = esign(((idA,ts_4,ambulance),h(psign((idA,ts_4,ambulance),pskA))),ecqvSK(skCA,(idA,ambulance),h(ppk(pskA)),puA)), ~M_11 = h(ppk(pskA)), ~M_12 = h(psign((idA,ts_4,ambulance),pskA)), ~M_15 = psign((idA,ts_4,ambulance),pskA) at {34} in copy a_6
+
+event RSUYellow(idA,(idA,ts_4,ambulance)) at {39} in copy a_6
+
+get grantedSRM(=idA,=ts_4): else branch taken at {63} in copy a_6
+
+insert grantedSRM(idA,ts_4) at {54} in copy a_3
+
+event RSUGreen(idA,(idA,ts_4,ambulance)) at {55} in copy a_3 (goal)
+
+event RSUSentSSM(idA,granted) at {57} in copy a_3
+
+out(c, (~M_16,~M_17,~M_18)) with ~M_16 = idA, ~M_17 = granted, ~M_18 = rsign((idA,granted),skR) at {58} in copy a_3
+
+get pkCache(idA,ppk(pskA)) at {62} in copy a_6
+
+insert grantedSRM(idA,ts_4) at {54} in copy a_6
+
+event RSUGreen(idA,(idA,ts_4,ambulance)) at {55} in copy a_6 (goal)
+
+The event RSUGreen(idA,(idA,ts_4,ambulance)) is executed at {55} in copy a_3.
+The event RSUGreen(idA,(idA,ts_4,ambulance)) is executed at {55} in copy a_6.
+A trace has been found.
+RESULT inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) is false.
+RESULT (but event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is true.)
+-- Query not attacker(pskA[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 122 rules (57 with conclusion selected). Queue: 3 rules.
+Starting query not attacker(pskA[])
+RESULT not attacker(pskA[]) is true.
+-- Query not attacker(skCA[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 122 rules (57 with conclusion selected). Queue: 3 rules.
+Starting query not attacker(skCA[])
+RESULT not attacker(skCA[]) is true.
+-- Query not event(Blacklist(idA[])) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 127 rules (57 with conclusion selected). Queue: 7 rules.
+Starting query not event(Blacklist(idA[]))
+RESULT not event(Blacklist(idA[])) is true.
+-- Query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 127 rules (53 with conclusion selected). Queue: 22 rules.
+Starting query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))
+goal reachable: b-event(EmergencyEnrolled(idA[])) -> event(RSUGreen(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts_1[!1 = @sid]
+goal reachable: b-event(EmergencyEnrolled(idA[])) -> event(RSUGreen(idA[],(idA[],ts_3,ambulance)))
+Abbreviations:
+ts_3 = ts[!1 = @sid]
+RESULT event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) is true.
+-- Query event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 127 rules (59 with conclusion selected). Queue: 5 rules.
+Starting query event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4))
+goal reachable: b-event(RSUSentSSM(idA[],granted)) -> event(OBUAcceptSSM(idA[],granted))
+goal reachable: b-event(RSUSentSSM(idA[],needcert)) -> event(OBUAcceptSSM(idA[],needcert))
+RESULT event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4)) is true.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is true.
+
+Query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is true.
+
+Query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) is false.
+
+Query not attacker(pskA[]) is true.
+
+Query not attacker(skCA[]) is true.
+
+Query not event(Blacklist(idA[])) is true.
+
+Query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) is true.
+
+Query event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4)) is true.
+
+--------------------------------------------------------------
+

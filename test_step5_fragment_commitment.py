@@ -59,7 +59,8 @@ def run_test():
     print("【測試 2】：惡意碎片注入防禦 (Early-Drop 0.5μs 攔截)")
     print("-" * 55)
     msg_id_2 = 102
-    frags_2 = make_fragments(full_packet, msg_id=msg_id_2)
+    # 每個測試使用新的 SRM：RSU 會拒絕重複放行同一則已放行的 SRM (F-4)
+    frags_2 = make_fragments(gen_packet(obu_test_id, known_RSU=False), msg_id=msg_id_2)
 
     # 先送合法 F1
     process_fragment(frags_2[0], addr)
@@ -92,7 +93,8 @@ def run_test():
     print("【測試 3】：UDP 亂序自癒傳輸 (F2 先到 -> F1 後到回溯檢驗)")
     print("-" * 55)
     msg_id_3 = 103
-    frags_3 = make_fragments(full_packet, msg_id=msg_id_3)
+    # 每個測試使用新的 SRM：RSU 會拒絕重複放行同一則已放行的 SRM (F-4)
+    frags_3 = make_fragments(gen_packet(obu_test_id, known_RSU=False), msg_id=msg_id_3)
 
     # 先送 F2
     process_fragment(frags_3[1], addr)
@@ -121,7 +123,8 @@ def run_test():
     print("【測試 4】：亂序惡意注入防禦 (偽造 F2 先到 -> F1 到達時回溯抓包並清除)")
     print("-" * 55)
     msg_id_4 = 104
-    frags_4 = make_fragments(full_packet, msg_id=msg_id_4)
+    # 每個測試使用新的 SRM：RSU 會拒絕重複放行同一則已放行的 SRM (F-4)
+    frags_4 = make_fragments(gen_packet(obu_test_id, known_RSU=False), msg_id=msg_id_4)
 
     # 攻擊者先偷送偽造的 F2
     fake_f2_4 = bytearray(frags_4[1])

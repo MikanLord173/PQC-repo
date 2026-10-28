@@ -1,0 +1,96 @@
+(* 情境 4：量子攻擊者 × 修正版 (與現行程式碼實作一致，見 classical_fixed.pv 的 (a)~(g))
+   量子攻擊者以 Shor 破解所有 ECC 私鑰：CA ECC 根私鑰 d_CA、RSU 的 SSM 簽章私鑰 (ECDSA)；
+   ML-DSA-44 (車輛私鑰、CA 後量子根私鑰) 維持安全。
+   程式碼保留「Full 模式 ML-DSA 驗簽失敗 → 硬黑名單」，因此此處也保留，以檢查其殘餘風險。 *)
+
+free skCA: skey [private].
+free pskCA: pqsk [private].
+free skR: skey [private].
+free idA: bitstring.
+free puA: bitstring.
+free pskA: pqsk [private].
+
+query m: bitstring; event(RSUGreen(idA, m)) ==> event(OBUSent(idA, m)).
+(* 閃黃燈只依賴 ECC (F1 輕量驗證)，量子攻擊者下預期仍可偽造 → 僅能作為「預備」訊號 *)
+query m: bitstring; event(RSUYellow(idA, m)) ==> event(OBUSent(idA, m)).
+query attacker(pskA).
+query attacker(pskCA).
+(* 殘餘風險：ECC 已不可信，ML-DSA 驗簽失敗無法歸責於本人 → 預期攻擊者可誘發封鎖 *)
+query event(Blacklist(idA)).
+query i: bitstring, m: bitstring; event(RSUGreen(i, m)) ==> event(EmergencyEnrolled(i)).
+(* 殘餘風險：SSM 以 ECDSA 簽章，預期可偽造 (影響為降級 / 頻寬，不會誤放行號誌) *)
+query i: bitstring, st: bitstring; event(OBUAcceptSSM(i, st)) ==> event(RSUSentSSM(i, st)).
+
+let OBU(tag: bitstring, pkpart: bitstring, certpart: bitstring, id: bitstring, sk: skey, pu: bitstring, psk: pqsk) =
+  new ts: bitstring;
+  let m = (id, ts, ambulance) in
+  let psig = psign(m, psk) in
+  event OBUSent(id, m);
+  out(c, (tag, m, esign((m, h(psig)), sk), id, ambulance, pu, h(ppk(psk)), h(psig), pkpart, certpart, psig)).
+
+let SendSSM(id: bitstring, st: bitstring) =
+  event RSUSentSSM(id, st);
+  out(c, (id, st, rsign((id, st), skR))).
+
+let RSU(qca: pkey, pkCApq: bitstring) =
+  in(c, (tag: bitstring, m: bitstring, esig: bitstring, id: bitstring, crole: bitstring, pu: bitstring,
+         hq: bitstring, hs: bitstring, pkin: bitstring, cert: bitstring, psig: bitstring));
+  let (mid: bitstring, ts: bitstring, role: bitstring) = m in
+  if crole = ambulance then
+  if role = crole then
+  if everifyQ(esig, (m, hs), qca, (id, crole), hq, pu) = true then
+  event RSUYellow(id, m);
+  if h(psig) = hs then (
+    get grantedSRM(=id, =ts) in 0 else
+    if tag = full then (
+      if h(pkin) = hq then
+      let okc = pverify(cert, (id, crole, hq, pu), pkCApq) in (
+        let ok = pverify(psig, m, pkin) in (
+          insert pkCache(id, pkin);
+          insert grantedSRM(id, ts);
+          event RSUGreen(id, m);
+          SendSSM(id, granted)
+        ) else
+          event Blacklist(id)
+      )
+    ) else if tag = short then (
+      get pkCache(=id, pkc) suchthat h(pkc) = hq in (
+        let ok = pverify(psig, m, pkc) in
+          insert grantedSRM(id, ts);
+          event RSUGreen(id, m);
+          SendSSM(id, granted)
+      ) else
+        SendSSM(id, needcert)
+    )
+  ).
+
+let OBURecv(pkR: pkey) =
+  in(c, (i: bitstring, st: bitstring, sig: bitstring));
+  if rverify(sig, (i, st), pkR) = true then
+  event OBUAcceptSSM(i, st).
+
+let CAEnroll =
+  in(c, (i: bitstring, hq: bitstring, pu: bitstring, t: bitstring));
+  get registry(=i, r) in
+  if t = mac(ekey(i), (i, hq, pu)) then
+  out(c, (ecqvSK(skCA, (i, r), hq, pu), psign((i, r, hq, pu), pskCA))).
+
+let CorruptVehicle =
+  new idc: bitstring;
+  insert registry(idc, car);
+  out(c, (idc, ekey(idc))).
+
+process
+  let qca = eccpk(skCA) in
+  let pkCApq = ppk(pskCA) in
+  let pkR = rpk(skR) in
+  out(c, (qca, pkCApq, pkR));
+  out(c, (skCA, skR));                            (* Shor：所有 ECC 私鑰被破解 *)
+  insert registry(idA, ambulance);
+  let pkA = ppk(pskA) in
+  let skA = ecqvSK(skCA, (idA, ambulance), h(pkA), puA) in
+  let certA = psign((idA, ambulance, h(pkA), puA), pskCA) in
+  event EmergencyEnrolled(idA);
+  insert pkCache(idA, pkA);
+  ( (!OBU(full, pkA, certA, idA, skA, puA, pskA)) | (!OBU(short, none, none, idA, skA, puA, pskA))
+  | (!RSU(qca, pkCApq)) | (!CorruptVehicle) | (!OBURecv(pkR)) | (!CAEnroll) )

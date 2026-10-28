@@ -1,0 +1,53 @@
+﻿功能編號,項目代碼,項目說明,分類,次數,每樣本內部重複次數,平均(ms),標準差(ms),最小(ms),中位數(ms),P95(ms),P99(ms),最大(ms)
+1,ca_enroll,"CA ca_process_enrollment total (P_U, e, r; includes CA key file load)",requested,1000,1,0.775274,0.052721,0.663250,0.765541,0.877083,0.943125,1.032125
+1,ca_enroll_load_priv_key,breakdown: read + parse CA ECC private key from disk (every enroll call),overlooked,1000,1,0.049832,0.220494,0.040666,0.041125,0.052500,0.066291,7.013125
+1,ca_enroll_point_ops,breakdown: P_U = R_U + k_CA*G (decode + scalar mult + add + compress),overlooked,1000,1,0.637205,0.033206,0.542125,0.633708,0.696750,0.733000,0.834500
+2,obu_derive_d_u,OBU obu_derive_key: d_U = (e*k_U + r) mod n (incl. SHA-256 of 1312B PQC pub),requested,1000,1,0.002688,0.000927,0.002375,0.002583,0.003167,0.004375,0.025084
+2,obu_gen_request_r_u,"OBU generate_enrollment_request: k_U random, R_U = k_U*G",overlooked,1000,1,0.487335,0.030027,0.415792,0.484333,0.541333,0.577791,0.612667
+2,obu_signing_key_from_d_u,OBU SigningKey.from_secret_exponent(d_U) (setup step 5),overlooked,1000,1,0.444640,0.018532,0.429209,0.441875,0.482125,0.516167,0.581917
+2,obu_mldsa_keygen,"OBU ML-DSA-44 keypair generation (setup, one-time)",overlooked,1000,1,0.032104,0.002579,0.030000,0.031584,0.035750,0.045167,0.058708
+3,e_concat_prehashed_73B,memory copy: ID(8)+P_U(33)+H(pk)(32) = 73B,requested,1000,200,0.000075,0.000007,0.000071,0.000073,0.000078,0.000105,0.000185
+3,e_concat_direct_1353B,memory copy: ID(8)+P_U(33)+pk(1312) = 1353B,requested,1000,200,0.000109,0.000010,0.000105,0.000109,0.000110,0.000152,0.000257
+3,e_two_layer_rsu,e with H(pk) already in packet (RSU path): concat 73B + SHA-256 + mod n,requested,1000,200,0.000546,0.000037,0.000524,0.000530,0.000631,0.000707,0.000768
+3,e_two_layer_with_prehash,e incl. computing H(pk) (CA/OBU path): SHA-256(1312B) + concat 73B + SHA-256,requested,1000,200,0.001334,0.000064,0.001295,0.001311,0.001470,0.001629,0.001716
+3,e_direct_1312B,e without pre-hash: concat 1353B + SHA-256 + mod n,requested,1000,200,0.001054,0.000051,0.001027,0.001035,0.001167,0.001265,0.001416
+3,sha256_pqc_pub_1312B,SHA-256 of 1312B ML-DSA-44 public key alone,requested,1000,200,0.000796,0.000040,0.000779,0.000781,0.000886,0.000983,0.001041
+4,rsu_reconstruct_q_u,RSU parse.reconstruct_obu_pubkey total (includes CA pub key file load),requested,1000,1,1.784444,0.062728,1.715084,1.771958,1.892500,1.920125,2.889250
+4,rsu_reconstruct_load_ca_pub,breakdown: read + parse CA pub key from disk (every reconstruct call),overlooked,1000,1,0.029768,0.002925,0.028542,0.029041,0.032458,0.045083,0.061500
+4,rsu_reconstruct_point_math,breakdown: decode P_U + e*P_U + Q_CA,requested,1000,1,1.720696,0.111839,1.630000,1.694416,1.829250,2.048833,3.925083
+4,rsu_reconstruct_vk_from_point,breakdown: VerifyingKey.from_public_point(Q_U),overlooked,1000,1,0.064984,0.011898,0.057458,0.062875,0.075916,0.132833,0.171041
+5,rsu_ecdsa_verify,"Tier-1 ECDSA P-256 verify (vk.verify, SHA-256)",requested,1000,1,2.095853,1.447499,1.912708,1.992042,2.141416,3.019500,40.262208
+5,rsu_mldsa_verify,Tier-2 ML-DSA-44 verify only (reused oqs object),requested,1000,1,0.029295,0.002711,0.028500,0.028667,0.033875,0.041959,0.057500
+5,rsu_oqs_context_create,oqs.Signature('ML-DSA-44') construct + free (done per verify in parse_packet),overlooked,1000,1,0.003337,0.001350,0.003083,0.003209,0.003292,0.003416,0.023500
+6,rsu_early_drop_fake_f2,RSU process_fragment(fake F2): rate limit + header + SHA-256 + compare + drop,requested,1000,1,0.002012,0.000484,0.001833,0.001959,0.002083,0.003459,0.015083
+6,rsu_early_drop_hash_core,core only: SHA-256(fake F2 chunk) != committed hash,requested,1000,200,0.000902,0.000050,0.000877,0.000882,0.001013,0.001121,0.001232
+7,obu_ecdsa_sign,OBU ECDSA P-256 sign (SHA-256),requested,1000,1,0.488995,0.031770,0.417667,0.486333,0.547084,0.586375,0.632959
+7,obu_mldsa_sign,OBU ML-DSA-44 sign only (reused oqs object),requested,1000,1,0.070558,0.037573,0.036791,0.056666,0.142625,0.198291,0.305750
+7,obu_load_keys_per_packet,gen_packet reads ECC key + PQC key + cert from disk every packet,overlooked,1000,1,0.478865,0.017495,0.465666,0.470167,0.515917,0.545750,0.557875
+7,obu_srm_payload_json,generate SRM payload + json.dumps,overlooked,1000,1,0.005990,0.000867,0.005666,0.005834,0.006250,0.008459,0.021000
+7,obu_gen_packet_full,"OBU gen_packet total, Full (payload + 2 signatures + file I/O + packing)",overlooked,1000,1,1.091095,0.145202,0.938500,1.064125,1.233792,1.596625,3.221208
+7,obu_gen_packet_short,"OBU gen_packet total, Short",overlooked,1000,1,1.075389,0.073350,0.960083,1.065458,1.173750,1.246458,2.572375
+7,obu_make_fragments_full,OBU make_fragments (DUP/none) Full: split + SHA-256 commitments,overlooked,1000,1,0.006009,0.000930,0.005833,0.005917,0.006083,0.007250,0.028167
+7,obu_make_fragments_short,OBU make_fragments (DUP/none) Short,overlooked,1000,1,0.002979,0.000143,0.002916,0.002959,0.003041,0.003042,0.007125
+7,obu_make_fragments_xor_full,OBU make_fragments_xor Full: split + commitments + XOR parity (Python loop),overlooked,1000,1,0.258908,0.011001,0.246166,0.254333,0.284291,0.304166,0.321666
+7,obu_make_fragments_xor_short,OBU make_fragments_xor Short,overlooked,1000,1,0.103020,0.005916,0.097875,0.101250,0.116375,0.127834,0.168833
+8,rsu_f1_verify_cold,"RSU verify_f1_ecc, cache miss: parse + 150ms check + ECQV reconstruct + ECDSA verify",requested,1000,1,3.817973,0.091982,3.607083,3.803458,3.978333,4.047416,4.339625
+8,rsu_f1_verify_hot,"RSU verify_f1_ecc, cache hit (backhaul prewarmed): parse + ECDSA verify",requested,1000,1,2.006308,0.083151,1.840750,1.993666,2.118875,2.179875,2.997167
+9,rsu_xor_recover_full,"RSU recover_xor_heavy, Full (3 heavy fragments, one missing)",requested,1000,1,0.200114,0.009143,0.195541,0.196750,0.219041,0.242500,0.256667
+9,rsu_xor_recover_short,"RSU recover_xor_heavy, Short (2 heavy fragments, one missing)",requested,1000,1,0.055439,0.012732,0.049291,0.052792,0.066042,0.135292,0.194375
+10,rsu_reassembly_full,"verify SHA-256 commitment of every F2..FN + join, Full (3 fragments)",requested,1000,1,0.004016,0.001527,0.003625,0.003750,0.005167,0.005458,0.036625
+10,rsu_reassembly_short,"verify SHA-256 commitment of every F2..FN + join, Short (2 fragments)",requested,1000,1,0.001579,0.000146,0.001500,0.001583,0.001625,0.001625,0.005959
+11,rsu_mldsa_verify_full,"ML-DSA-44 verify as in parse_packet, Full: pk sliced from packet (incl. oqs ctx)",requested,1000,1,0.032820,0.003308,0.031125,0.032167,0.036250,0.052417,0.063959
+11,rsu_mldsa_verify_short,"ML-DSA-44 verify as in parse_packet, Short: pk from cache lookup (incl. oqs ctx)",requested,1000,1,0.032930,0.003195,0.032000,0.032209,0.037250,0.049667,0.071458
+11,rsu_full_pk_hash_binding,Full only: SHA-256(1312B pk) == pqc_pub_hash check,requested,1000,200,0.000818,0.000043,0.000791,0.000796,0.000915,0.000992,0.001070
+11,rsu_short_cache_lookup,Short only: query_pqc_pub_cache,requested,1000,200,0.000152,0.000017,0.000143,0.000149,0.000170,0.000254,0.000308
+11,rsu_parse_packet_full,"RSU parse_packet total, Full (hash binding + ML-DSA + ECDSA + cache write)",requested,1000,1,2.101410,0.058948,2.003708,2.082416,2.207958,2.282208,2.592083
+11,rsu_parse_packet_short,"RSU parse_packet total, Short (cache lookup + ML-DSA + ECDSA)",requested,1000,1,2.044879,0.050436,1.953667,2.029000,2.148209,2.190292,2.279709
+0,rsu_ssm_generate_json,RSU generate_ssm_payload + json.dumps (green SSM),overlooked,1000,1,0.005089,0.000979,0.004833,0.005000,0.005250,0.006625,0.035041
+0,rsu_backhaul_prewarm,RSU trigger_inter_rsu_prewarm to downstream RSUs (2 and 3),overlooked,1000,1,0.003903,0.001022,0.003708,0.003833,0.003917,0.004875,0.033500
+0,rsu_message_e2e_full_cold,"RSU whole message to green SSM, Full, cold cache (all real code paths)",overlooked,1000,1,6.515783,0.315064,6.164667,6.490916,6.702625,6.813792,13.334250
+0,rsu_message_e2e_short_prewarmed,"RSU whole message to green SSM, Short, backhaul-prewarmed cache",overlooked,1000,1,4.650706,0.444034,4.366000,4.607875,4.841917,5.241166,16.926375
+0,rsu_message_e2e_xor_full_recover,"RSU whole message to green SSM, XOR Full with F2 lost + recovered",overlooked,1000,1,6.719765,0.115858,6.444541,6.708959,6.904459,7.013042,7.545375
+0,timer_overhead,perf_counter_ns call pair with empty op (measurement floor),overlooked,1000,1,0.000101,0.000060,0.000042,0.000084,0.000125,0.000166,0.001875
+0,ref_ecdsa_sign_openssl,reference only: P-256 ECDSA sign via OpenSSL (cryptography),reference,1000,1,0.025145,0.002566,0.023916,0.024708,0.029042,0.038833,0.049916
+0,ref_ecdsa_verify_openssl,reference only: P-256 ECDSA verify via OpenSSL (cryptography),reference,1000,1,0.058570,0.003204,0.055958,0.057791,0.063791,0.074042,0.084333

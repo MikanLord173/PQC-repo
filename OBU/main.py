@@ -2,6 +2,7 @@ import socket, time, json, os, argparse
 from OBU.encode_packet import gen_packet
 from OBU.fragment import send_fragment
 from OBU.gen_payload import format_temporary_id
+import pki
 
 # 配置參數
 OBU_ID = "AMB-217"  # 車輛 ID，最多8字元
@@ -33,6 +34,23 @@ check_RSU = check_intersection
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
+SSM_MAX_AGE = 1.0   # 秒；拒絕過舊的 SSM (防止重放先前截獲的 status=6)
+_ca_ecc_vk = None
+
+def ssm_trusted(ssm):
+    """
+    【安全修正 F-6】只接受由 CA 核發憑證之 RSU 簽署、且夠新的 SSM。
+    原本任何人都能偽造 status=6 迫使車輛退回 Full，或偽造 status=4 + prewarmed_rsus 讓車輛在下游誤用 Short。
+    """
+    global _ca_ecc_vk
+    if _ca_ecc_vk is None:
+        from ecdsa import VerifyingKey
+        with open("OBU/keys/ca_ecc_pub.key", "rb") as f:
+            _ca_ecc_vk = VerifyingKey.from_der(f.read())
+    if abs(time.time() - ssm.get("full_timestamp", 0)) > SSM_MAX_AGE:
+        return False
+    return pki.verify_ssm(ssm, _ca_ecc_vk)
+
 def send_heartbeat(obu_id, frequency, target_intersection=1, mode="dup"):
     """
     mode 實驗切換旗標：
@@ -61,7 +79,9 @@ def send_heartbeat(obu_id, frequency, target_intersection=1, mode="dup"):
             try:
                 ack_data, _ = sock.recvfrom(2048)
                 ack_json = json.loads(ack_data.decode('utf-8'))
-                if ack_json.get("msgID") == 30: # SSM (Signal Status Message)
+                if ack_json.get("msgID") == 30 and not ssm_trusted(ack_json):
+                    print("[安全防護] 收到未通過 RSU 簽章驗證或已過期的 SSM，忽略\n")
+                elif ack_json.get("msgID") == 30: # SSM (Signal Status Message)
                     for status_entry in ack_json.get("status", []):
                         ack_inter_id = status_entry.get("id", {}).get("id")
                         status_list = status_entry.get("sigStatus", [])

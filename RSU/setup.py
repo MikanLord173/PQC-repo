@@ -69,5 +69,32 @@ def fetch_ca_keys(ca_ip=CA_IP, ca_port=CA_PORT):
             print("找不到本地公鑰，請先在 CA 端執行 CA.gen_keys！")
             return False
 
+def provision_rsu_keys(rsu_ids=(1, 2, 3, 4)):
+    """
+    【安全修正 F-6】為每個路口 RSU 產生 ECDSA 金鑰，並由 CA 簽發 RSU 憑證，用於簽署下行 SSM。
+    RSU 由道路主管機關佈建，視同在受控環境配發 (直接呼叫本地 CA 簽發，不經公開網路)。
+    輸出：RSU/keys/rsu_<id>_ecc_priv.key、RSU/keys/rsu_<id>_cert.json
+    """
+    import base64, json
+    from ecdsa import SigningKey, NIST256p
+    from CA.enroll import issue_rsu_certificate
+    if not os.path.exists("CA/keys/ca_ecc_priv.key"):
+        print("找不到 CA/keys/ca_ecc_priv.key，無法簽發 RSU 憑證 (需在 CA 端執行)")
+        return False
+    os.makedirs("RSU/keys", exist_ok=True)
+    for rsu_id in rsu_ids:
+        sk = SigningKey.generate(curve=NIST256p)
+        pub = sk.get_verifying_key().to_string()          # 64B 未壓縮 (x‖y)
+        cert = {"rsu_id": rsu_id,
+                "pub": base64.b64encode(pub).decode("ascii"),
+                "ca_sig": base64.b64encode(issue_rsu_certificate(rsu_id, pub)).decode("ascii")}
+        with open(f"RSU/keys/rsu_{rsu_id}_ecc_priv.key", "wb") as f:
+            f.write(sk.to_der())
+        with open(f"RSU/keys/rsu_{rsu_id}_cert.json", "w", encoding="utf-8") as f:
+            json.dump(cert, f)
+    print(f"已為 RSU {list(rsu_ids)} 配發 SSM 簽章金鑰與 CA 憑證")
+    return True
+
 if __name__ == "__main__":
-    fetch_ca_keys()
+    if fetch_ca_keys():
+        provision_rsu_keys()

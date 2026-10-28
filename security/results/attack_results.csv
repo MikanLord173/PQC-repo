@@ -1,0 +1,27 @@
+﻿編號,威脅類別,攻擊者能力與手法,防禦機制,預期結果,是否防禦成功,實際觀察
+B1,baseline,none,legit Full message accepted; signed SSM verified by OBU,defended,yes,green=True
+B2,baseline,none,legit Short message accepted with backhaul-prewarmed cache,defended,yes,green=True
+F1,forgery,no keys; forges AMB-217 SRM with random ECC key + legit public cert fields,F1 ECDSA verify under ECQV-reconstructed Q_U,defended,yes,atk flash=False green=False; legit green=True
+T1,tampering,MITM modifies SRM field (intersection id) after signing,ECDSA signature covers SRM payload,defended,yes,flash=False green=False
+T2,tampering,MITM flips one byte of the ECDSA signature,ECDSA verify,defended,yes,flash=False green=False
+T3,tampering,MITM flips a byte of the ML-DSA signature in a heavy fragment (commitment untouched),F1 SHA-256 fragment commitment (Early-Drop),defended,yes,atk green=False; blacklist=[]; legit green=True
+T4,tampering,MITM swaps PQC public key (Full) and recomputes F1 commitments,pqc_pub_hash bound into ECQV e; SHA-256 binding check,defended,yes,atk flash=True green=False; blacklist=[]; legit green=True
+T5,tampering / DoS,MITM relays legit F1 but corrupts ML-DSA sig and recomputes F1 commitments,"F-1: ECC signs payload || H(sig_PQC) -> PQC_SIG_HASH_MISMATCH, dropped without blacklisting",defended,yes,atk green=False status=PQC_SIG_HASH_MISMATCH; AMB-217 blacklisted=False; legit green after attack=True
+T6,tampering,inject forged F2 with valid header into legit session,Early-Drop hash commitment,defended,yes,legit green despite injected F2=True
+T7,tampering,poisoned XOR parity fragment arrives before the real one,recovered fragment checked against F1 commitment; poisoned FP discarded,defended,yes,legit green after poisoned FP=True
+T8,tampering / cache poisoning,"cache warm; MITM relays legit SRM + ECC sig but swaps in attacker pqc_pub_hash, PQC key and ML-DSA sig","F-7: ECQV key cache keyed by (ID, role, P_U, H(pk)); F-1/F-5 bindings",defended,yes,atk green=False; PQC cache poisoned=False; legit Short green=True
+I1,impersonation,enrolled attacker (EVIL-01) signs with own key but claims ID AMB-217,ECQV: Q_U reconstructed from claimed ID -> attacker key does not match,defended,yes,flash=False green=False
+I2,impersonation,enrolled attacker reuses AMB-217's P_U / pk hash with own ECC key,"ECQV implicit certificate binds d_U to (ID, role, P_U, H(pk))",defended,yes,flash=False green=False
+I3,impersonation / authorization,enrolled NON-emergency vehicle (role=0) sends SRM claiming role=ambulance,F-2: role bound into ECQV e and CA PQC cert; RSU requires emergency role matching the SRM,defended,yes,cert role=0: flash=False green=False; role byte forged to 14: flash=False green=False
+I4,impersonation / enrollment,attacker asks the CA to enroll ID AMB-217 (and an unregistered ID) without the enrollment key,F-3: CA registry + HMAC-authenticated enrollment request,defended,yes,AMB-217 credential issued=False; unregistered AMB-999 issued=False
+I5,DoS / framing,attacker floods invalid F1s claiming AMB-217 to get it blacklisted,no blacklisting before authentication,defended,yes,blacklist=[]; legit green=True
+R1,replay,replay captured legit message after 200 ms,150 ms freshness check on full_timestamp,defended,yes,flash=False green=False
+R2,replay,replay within 150 ms from another address while the legit session is in progress,per-vehicle session dedup by F1 timestamp,defended,yes,replay green=False; legit green=True
+R3,replay,replay within 150 ms from another address AFTER the legit session completed,"F-4: granted SRMs remembered by (obu_id, full_timestamp)",defended,yes,legit green=True; replay green=False
+S1,forged downlink,attacker sends unsigned / self-signed SSM status=6 to force Full fallback,F-6: OBU verifies RSU certificate (CA ECC) + SSM ECDSA signature,defended,yes,unsigned accepted=False; self-signed accepted=False
+S2,forged downlink,SSM genuinely signed by RSU 2 but claiming intersection 1 (status=4 + prewarm list),F-6: SSM intersection id must equal the RSU id in its certificate,defended,yes,cross-intersection SSM accepted=False
+S3,replay downlink,replay a genuine status=6 SSM captured more than 1 s earlier,F-6: OBU rejects SSM older than 1 s,defended,yes,fresh accepted=True; replay after 1.1s accepted=False
+Q1,quantum attacker,"ECDSA key of AMB-217 broken (Shor), ML-DSA key unknown; Full packet",Tier-2 ML-DSA-44 verify rejects green (residual: F1 still flashes yellow and FULL_SIG_FAIL blacklists the real vehicle),defended,yes,flash(yellow)=True green=False; real AMB-217 blacklisted=True
+Q2,quantum attacker,"ECDSA key of AMB-217 broken, ML-DSA key unknown; Short packet",Tier-2 ML-DSA-44 verify with cached pk rejects,defended,yes,flash(yellow)=True green=False nack=True
+Q3,quantum attacker,CA ECC root key broken (Shor on Q_CA); attacker mints ECQV cert for AMB-217 bound to its own ML-DSA key,"F-5: CA ML-DSA-44 certificate over (ID, role, P_U, H(pk)) in Full packets",defended,yes,"green with (no cert, stolen legit cert, random cert)=[False, False, False]"
+Q4,quantum attacker,ECDSA key of AMB-217 broken; cache warm; Full packet with attacker's own ML-DSA key (no CA key needed),F-7 cache key + F-5 CA PQC certificate,defended,yes,green=False; PQC cache poisoned=False

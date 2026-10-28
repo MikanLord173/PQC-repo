@@ -1,0 +1,100 @@
+(* 情境 2：古典 Dolev-Yao 攻擊者 × 修正版 (與現行程式碼實作一致)
+   (a) F-1 ECC 簽章涵蓋 (m, H(sig_PQC))：esig = ECDSA(m ‖ H(sig_PQC))，H(sig_PQC) 隨 F1 明文傳送
+   (b) F-2 角色綁定進 ECQV：e = H(ID ‖ role ‖ P_U ‖ H(pk_PQC))，RSU 要求緊急角色且與 SRM 一致
+   (c) F-3 CA 註冊需名冊登記與註冊金鑰 MAC；角色以名冊為準
+   (d) F-4 RSU 記錄已放行的 (ID, 時間戳)，同一則 SRM 只放行一次
+   (e) F-5 Full 封包夾帶 CA ML-DSA-44 憑證 certPQC = ML-DSA_CA(ID ‖ role ‖ H(pk_PQC) ‖ P_U)
+   (f) F-6 下行 SSM 由 RSU 簽章，OBU 驗證後才接受
+   (g) Short 模式快取公鑰須吻合 H(pk_PQC)，否則回 status=6 *)
+
+free skCA: skey [private].
+free pskCA: pqsk [private].    (* CA ML-DSA-44 根私鑰 *)
+free skR: skey [private].      (* RSU SSM 簽章私鑰 (由 CA 憑證背書) *)
+free idA: bitstring.
+free puA: bitstring.
+free pskA: pqsk [private].
+
+query m: bitstring; event(RSUGreen(idA, m)) ==> event(OBUSent(idA, m)).
+query m: bitstring; event(RSUYellow(idA, m)) ==> event(OBUSent(idA, m)).
+(* 注入式認證：F-4 以表格記錄已放行的 SRM；ProVerif 的 get/insert 非原子操作，可能仍回報 false *)
+query m: bitstring; inj-event(RSUGreen(idA, m)) ==> inj-event(OBUSent(idA, m)).
+query attacker(pskA).
+query attacker(skCA).
+query event(Blacklist(idA)).
+query i: bitstring, m: bitstring; event(RSUGreen(i, m)) ==> event(EmergencyEnrolled(i)).
+query i: bitstring, st: bitstring; event(OBUAcceptSSM(i, st)) ==> event(RSUSentSSM(i, st)).
+
+let OBU(tag: bitstring, pkpart: bitstring, certpart: bitstring, id: bitstring, sk: skey, pu: bitstring, psk: pqsk) =
+  new ts: bitstring;
+  let m = (id, ts, ambulance) in
+  let psig = psign(m, psk) in
+  event OBUSent(id, m);
+  out(c, (tag, m, esign((m, h(psig)), sk), id, ambulance, pu, h(ppk(psk)), h(psig), pkpart, certpart, psig)).
+
+let SendSSM(id: bitstring, st: bitstring) =
+  event RSUSentSSM(id, st);
+  out(c, (id, st, rsign((id, st), skR))).
+
+let RSU(qca: pkey, pkCApq: bitstring) =
+  in(c, (tag: bitstring, m: bitstring, esig: bitstring, id: bitstring, crole: bitstring, pu: bitstring,
+         hq: bitstring, hs: bitstring, pkin: bitstring, cert: bitstring, psig: bitstring));
+  let (mid: bitstring, ts: bitstring, role: bitstring) = m in
+  if crole = ambulance then                                   (* F-2：憑證角色須為緊急車輛 *)
+  if role = crole then                                        (*       且與 SRM 宣稱一致 *)
+  if everifyQ(esig, (m, hs), qca, (id, crole), hq, pu) = true then
+  event RSUYellow(id, m);
+  if h(psig) = hs then (                                      (* F-1：否則 PQC_SIG_HASH_MISMATCH，只丟棄 *)
+    get grantedSRM(=id, =ts) in 0 else                        (* F-4：同一則 SRM 不重複放行 *)
+    if tag = full then (
+      if h(pkin) = hq then
+      let okc = pverify(cert, (id, crole, hq, pu), pkCApq) in (  (* F-5：CA 後量子憑證 *)
+        let ok = pverify(psig, m, pkin) in (
+          insert pkCache(id, pkin);
+          insert grantedSRM(id, ts);
+          event RSUGreen(id, m);
+          SendSSM(id, granted)
+        ) else
+          event Blacklist(id)                                 (* 已可歸責於金鑰持有者本身 *)
+      )
+    ) else if tag = short then (
+      get pkCache(=id, pkc) suchthat h(pkc) = hq in (
+        let ok = pverify(psig, m, pkc) in
+          insert grantedSRM(id, ts);
+          event RSUGreen(id, m);
+          SendSSM(id, granted)
+      ) else
+        SendSSM(id, needcert)
+    )
+  ).
+
+let OBURecv(pkR: pkey) =
+  in(c, (i: bitstring, st: bitstring, sig: bitstring));
+  if rverify(sig, (i, st), pkR) = true then                   (* F-6 *)
+  event OBUAcceptSSM(i, st).
+
+(* F-3：CA 只為名冊登記且 MAC 正確的申請發憑證，角色取自名冊 *)
+let CAEnroll =
+  in(c, (i: bitstring, hq: bitstring, pu: bitstring, t: bitstring));
+  get registry(=i, r) in
+  if t = mac(ekey(i), (i, hq, pu)) then
+  out(c, (ecqvSK(skCA, (i, r), hq, pu), psign((i, r, hq, pu), pskCA))).
+
+(* 攻擊者控制的已註冊一般車輛：名冊角色 = car，註冊金鑰交給攻擊者 *)
+let CorruptVehicle =
+  new idc: bitstring;
+  insert registry(idc, car);
+  out(c, (idc, ekey(idc))).
+
+process
+  let qca = eccpk(skCA) in
+  let pkCApq = ppk(pskCA) in
+  let pkR = rpk(skR) in
+  out(c, (qca, pkCApq, pkR));
+  insert registry(idA, ambulance);
+  let pkA = ppk(pskA) in
+  let skA = ecqvSK(skCA, (idA, ambulance), h(pkA), puA) in
+  let certA = psign((idA, ambulance, h(pkA), puA), pskCA) in
+  event EmergencyEnrolled(idA);
+  insert pkCache(idA, pkA);
+  ( (!OBU(full, pkA, certA, idA, skA, puA, pskA)) | (!OBU(short, none, none, idA, skA, puA, pskA))
+  | (!RSU(qca, pkCApq)) | (!CorruptVehicle) | (!OBURecv(pkR)) | (!CAEnroll) )

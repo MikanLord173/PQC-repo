@@ -42,6 +42,22 @@ def recv_all(sock, count):
         buffer += chunk
     return buffer
 
+def handle_enrollment(obu_id_raw, obu_R_U_bytes, obu_pqc_pub, tag, registry=None):
+    """
+    【安全修正 F-3】原本對任何 0x57 請求都直接發憑證 (可冒名註冊 AMB-217)。
+    現在先以 CA 名冊驗證申請者，角色取自名冊。
+    回傳：[P_U | r | role | ca_pqc_sig_len | ca_pqc_sig | ca_ecc_pub_len (1B) | ca_ecc_pub]，拒絕時回傳 None。
+    附上 CA ECC 根公鑰，供 OBU 驗證 RSU 下行 SSM 的憑證 (F-6)。
+    """
+    from CA.enroll import authenticate_enrollment, ca_process_enrollment
+    role = authenticate_enrollment(obu_id_raw, obu_R_U_bytes, obu_pqc_pub, tag or b'', registry=registry)
+    if role is None:
+        return None
+    with open('CA/keys/ca_ecc_pub.key', 'rb') as f:
+        ca_ecc_pub = f.read()
+    cert_data = ca_process_enrollment(obu_id_raw, obu_R_U_bytes, obu_pqc_pub, role)
+    return cert_data + struct.pack('!B', len(ca_ecc_pub)) + ca_ecc_pub
+
 def main():
     # Create TCP socket
     serverSocket = socket(AF_INET, SOCK_STREAM)
@@ -68,13 +84,15 @@ def main():
             obu_id_str = obu_id_raw.rstrip(b'\x00').decode('utf-8')
             print(f"已接收到 OBU {obu_id_str} 的 ECQV 註冊請求")
 
-            # 接收 33 bytes 的 R_U 請求點與 PQC 公鑰本體
+            # 接收 33 bytes 的 R_U 請求點、PQC 公鑰本體與 32 bytes 註冊驗證碼 (HMAC)
             obu_R_U_bytes = recv_all(connectionSocket, 33)
             obu_pqc_pub = recv_all(connectionSocket, obu_pqc_pub_len)
+            tag = recv_all(connectionSocket, 32)
 
-            # 呼叫 ECQV 簽發與雜湊糾纏
-            from CA.enroll import ca_process_enrollment
-            cert_data = ca_process_enrollment(obu_id_raw, obu_R_U_bytes, obu_pqc_pub)
+            cert_data = handle_enrollment(obu_id_raw, obu_R_U_bytes, obu_pqc_pub, tag)
+            if cert_data is None:
+                print(f"[拒絕] {obu_id_str} 未登記於 CA 名冊或註冊驗證碼錯誤，不發憑證")
+                cert_data = b''   # 長度 0 = 拒絕
 
             reply_header = struct.pack('!I', len(cert_data))
             reply = cert_data

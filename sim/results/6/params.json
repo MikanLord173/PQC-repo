@@ -1,0 +1,62 @@
+{
+  "command": "python3 -m sim.poster_exp --out sim/results/6",
+  "git_commit": "86e284f-dirty",
+  "run_at": "2026-10-28 23:32:43",
+  "elapsed_s": 108.7,
+  "trials": 1000,
+  "seed": 42,
+  "exp_a_loss_sweep": {
+    "per_ref_pct_grid": [
+      0,
+      5,
+      10,
+      15,
+      20,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50
+    ],
+    "ref_fragment_bytes": 1400,
+    "ber_from_per": "BER = 1 - (1 - PER)^(1/(8*(1400+64)))",
+    "distance_m": 10.0,
+    "speed_kmh": 36.0,
+    "alpha": 0.0,
+    "queue_ms": 0.5,
+    "loss_model": "iid",
+    "note": "one message per trial (arrival within 1 s)"
+  },
+  "exp_b_trip": {
+    "distance_m": 300.0,
+    "speed_kmh": 60.0,
+    "interval_s": 1.0,
+    "envs": [
+      "mid",
+      "high"
+    ],
+    "ber_ref": {
+      "none": 0.0,
+      "low": 1e-06,
+      "mid": 5e-06,
+      "high": 2e-05
+    },
+    "queue_ms": {
+      "none": 0.0,
+      "low": 0.2,
+      "mid": 0.5,
+      "high": 1.0
+    },
+    "alpha": 2.0,
+    "d_ref": 100.0,
+    "loss_model": "iid"
+  },
+  "costs_ms": {
+    "obu_gen": 1.2,
+    "f1_verify": 1.9,
+    "ecqv": 1.8,
+    "full_verify": 2.0
+  },
+  "compute_kpi_source": "sim/results/4/compute_summary.csv"
+}

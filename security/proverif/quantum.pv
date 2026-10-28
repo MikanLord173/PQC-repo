@@ -1,0 +1,72 @@
+(* 情境 3：量子攻擊者 × 現行設計
+   攻擊者以 Shor 演算法自公開的 Q_CA 求得 CA ECC 根私鑰 d_CA (進而可推得任何 ECC / ECQV 私鑰)；
+   ML-DSA-44 維持安全 (pskA 不洩漏)。其餘與 classical.pv 相同 (不驗證的 CA 註冊、明文 SSM)。 *)
+
+free skCA: skey [private].
+free idA: bitstring.
+free puA: bitstring.
+free pskA: pqsk [private].
+
+query m: bitstring; event(RSUGreen(idA, m)) ==> event(OBUSent(idA, m)).
+query m: bitstring; event(RSUYellow(idA, m)) ==> event(OBUSent(idA, m)).
+query attacker(pskA).
+query event(Blacklist(idA)).
+query i: bitstring, m: bitstring; event(RSUGreen(i, m)) ==> event(EmergencyEnrolled(i)).
+query i: bitstring, st: bitstring; event(OBUAcceptSSM(i, st)) ==> event(RSUSentSSM(i, st)).
+
+let OBU(tag: bitstring, pkpart: bitstring, id: bitstring, sk: skey, pu: bitstring, psk: pqsk) =
+  new ts: bitstring;
+  let m = (id, ts, ambulance) in
+  event OBUSent(id, m);
+  out(c, (tag, m, esign(m, sk), id, pu, h(ppk(psk)), pkpart, psign(m, psk))).
+
+let RSU(qca: pkey) =
+  in(c, (tag: bitstring, m: bitstring, esig: bitstring, id: bitstring, pu: bitstring,
+         hq: bitstring, pkin: bitstring, psig: bitstring));
+  let (mid: bitstring, ts: bitstring, role: bitstring) = m in
+  if role = ambulance then
+  if everifyQ(esig, m, qca, id, hq, pu) = true then
+  event RSUYellow(id, m);
+  if tag = full then (
+    if h(pkin) = hq then
+    let ok = pverify(psig, m, pkin) in (
+      insert pkCache(id, pkin);
+      event RSUGreen(id, m);
+      event RSUSentSSM(id, granted);
+      out(c, (id, granted))
+    ) else
+      event Blacklist(id)
+  ) else if tag = short then (
+    get pkCache(=id, pkc) in (
+      let ok = pverify(psig, m, pkc) in
+        event RSUGreen(id, m);
+        event RSUSentSSM(id, granted);
+        out(c, (id, granted))
+    ) else (
+      event RSUSentSSM(id, needcert);
+      out(c, (id, needcert))
+    )
+  ).
+
+let OBURecv =
+  in(c, (i: bitstring, st: bitstring));
+  event OBUAcceptSSM(i, st).
+
+let CAEnroll =
+  in(c, (i: bitstring, hq: bitstring, pu: bitstring));
+  out(c, ecqvSK(skCA, i, hq, pu)).
+
+let CorruptVehicle =
+  new idc: bitstring; new puc: bitstring; new pskc: pqsk;
+  out(c, (idc, puc, pskc, ecqvSK(skCA, idc, h(ppk(pskc)), puc))).
+
+process
+  let qca = eccpk(skCA) in
+  out(c, qca);
+  out(c, skCA);                                   (* Shor：ECC 根私鑰被破解 *)
+  let pkA = ppk(pskA) in
+  let skA = ecqvSK(skCA, idA, h(pkA), puA) in
+  event EmergencyEnrolled(idA);
+  insert pkCache(idA, pkA);
+  ( (!OBU(full, pkA, idA, skA, puA, pskA)) | (!OBU(short, none, idA, skA, puA, pskA))
+  | (!RSU(qca)) | (!CorruptVehicle) | (!OBURecv) | (!CAEnroll) )

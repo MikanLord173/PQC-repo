@@ -1,0 +1,56 @@
+{
+  "command": "python3 -m sim.trip_sim",
+  "git_commit": "86e284f-dirty",
+  "run_at": "2026-10-28 23:28:13",
+  "elapsed_s": 114.7,
+  "distance": 300.0,
+  "speed": 60.0,
+  "interval": 1.0,
+  "ack_timeout": 0.3,
+  "trials": 1000,
+  "seed": 42,
+  "envs": "none,low,mid,high",
+  "channels": "iid,ge",
+  "packets": "full,short",
+  "modes": "none,dup,xor",
+  "rate_mbps": 6.0,
+  "d_ref": 100.0,
+  "alpha": 2.0,
+  "rsu_offset": 10.0,
+  "ge_good_ms": 200.0,
+  "ge_bad_ms": 20.0,
+  "ge_beta": 100.0,
+  "jobs": 8,
+  "out": "sim/results/5",
+  "speed_mps": 16.666666666666668,
+  "calibrated": false,
+  "ber_ref": {
+    "none": 0.0,
+    "low": 1e-06,
+    "mid": 5e-06,
+    "high": 2e-05
+  },
+  "queue_ms": {
+    "none": 0.0,
+    "low": 0.2,
+    "mid": 0.5,
+    "high": 1.0
+  },
+  "costs_ms": {
+    "obu_gen": 1.2,
+    "f1_verify": 1.9,
+    "ecqv": 1.8,
+    "full_verify": 2.0
+  },
+  "constants": {
+    "link_overhead_bytes": 64,
+    "slot_us": 13.0,
+    "sifs_us": 32.0,
+    "aifsn": 2,
+    "cw_min": 3,
+    "preamble_us": 40.0,
+    "ge_ref_size_bytes": 1400,
+    "obu_id": "AMB-217",
+    "rsu_id": 1
+  }
+}

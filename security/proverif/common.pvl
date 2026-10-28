@@ -1,0 +1,68 @@
+(* ============================================================================
+   後量子混合簽章緊急車輛通行系統 — ProVerif 共用定義
+   (以 -lib 載入：proverif -lib security/proverif/common <scenario>.pv)
+
+   抽象層級：
+   - Dolev-Yao 攻擊者：完全控制無線通道 c (竊聽、攔截、竄改、重放、注入)。
+   - 分片、XOR/DUP 冗餘、雜湊承諾視為傳輸層細節，封包以單一訊息表示。
+     現行設計：ECC 簽章僅涵蓋 SRM payload，PQC 簽章與 PQC 公鑰不受 ECC 簽章保護。
+     修正版：ECC 簽章涵蓋 (payload, H(sig_PQC))，詳見各 *_fixed.pv。
+   - 時間戳記 150ms 時效檢查無法在符號模型中表達，以 fresh nonce ts 代表；
+     因此注入式 (injective) 對應性質會因「重放」而失敗，實務上由時效視窗限制。
+   ============================================================================ *)
+
+free c: channel.
+
+type skey.     (* ECC P-256 私鑰 *)
+type pkey.     (* ECC P-256 公鑰 *)
+type pqsk.     (* ML-DSA-44 私鑰 *)
+
+(* ─── 雜湊 ─── *)
+fun h(bitstring): bitstring.
+
+(* ─── ECC 公鑰、ECQV 隱式憑證與 ECDSA (Tier-1) ───
+   d_U = ecqvSK(d_CA, ID, H(pk_PQC), P_U)：只有知道 d_CA 者 (CA) 能為 (ID, H(pk), P_U) 產生隱式私鑰。
+   RSU 以 Q_CA 與憑證欄位重構 Q_U = e·P_U + Q_CA 並驗 ECDSA，合併為單一驗證析構子 everifyQ：
+     簽章者的私鑰恰為 CA 為「同一組」(ID, H(pk), P_U) 簽發的 d_U 時才通過。
+   (不使用 eccpk(ecqvSK(..)) = ecqvPK(..) 等式，避免 ProVerif 在等式理論下飽和不終止) *)
+fun eccpk(skey): pkey.
+fun ecqvSK(skey, bitstring, bitstring, bitstring): skey.
+fun esign(bitstring, skey): bitstring.
+reduc forall m: bitstring, s: skey, i: bitstring, hq: bitstring, p: bitstring;
+  everifyQ(esign(m, ecqvSK(s, i, hq, p)), m, eccpk(s), i, hq, p) = true.
+
+(* ─── ML-DSA-44 (Tier-2，後量子安全) ─── *)
+fun ppk(pqsk): bitstring.
+fun psign(bitstring, pqsk): bitstring.
+reduc forall m: bitstring, k: pqsk; pverify(psign(m, k), m, ppk(k)) = true.
+
+(* ─── RSU 簽章 (下行 SSM，ECDSA)：RSU 公鑰由 CA 憑證背書，此處抽象為 OBU 已知 rpk(skR) ─── *)
+fun rpk(skey): pkey.
+fun rsign(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey; rverify(rsign(m, k), m, rpk(k)) = true.
+
+(* ─── 註冊驗證 (F-3)：每台車出廠時配發的註冊金鑰，只有 CA 與該車知道 ─── *)
+fun ekey(bitstring): bitstring [private].
+fun mac(bitstring, bitstring): bitstring.
+
+(* ─── 常數 ─── *)
+const full, short, none: bitstring.     (* 封包類型；none 表示 Short 封包不帶公鑰 / 憑證 *)
+const ambulance: bitstring.             (* SRM requestor role = 14 *)
+const car: bitstring.                   (* 一般車輛角色 = 0 *)
+const granted, needcert: bitstring.     (* SSM status = 4 / 6 *)
+
+(* ─── 事件 ─── *)
+event OBUSent(bitstring, bitstring).    (* 合法 OBU 以 ID 送出 SRM m *)
+event RSUYellow(bitstring, bitstring).  (* RSU 驗過 F1 (ECC)，閃黃燈 *)
+event RSUGreen(bitstring, bitstring).   (* RSU 完成雙簽驗證，觸發綠燈 *)
+event Blacklist(bitstring).             (* RSU 將 ID 加入密碼學硬黑名單 *)
+event EmergencyEnrolled(bitstring).     (* CA 將 ID 註冊為緊急車輛 *)
+event RSUSentSSM(bitstring, bitstring). (* RSU 對 ID 送出 status 的 SSM *)
+event OBUAcceptSSM(bitstring, bitstring). (* OBU 接受 ID 的 status SSM (將據以切換 Full/Short) *)
+
+(* RSU 公鑰快取 (含有線骨幹預熱)：ID → 已驗證的 PQC 公鑰 *)
+table pkCache(bitstring, bitstring).
+(* CA 名冊 (F-3)：ID → 角色 *)
+table registry(bitstring, bitstring).
+(* RSU 已放行的 SRM (F-4)：(ID, 時間戳) *)
+table grantedSRM(bitstring, bitstring).

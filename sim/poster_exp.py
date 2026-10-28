@@ -176,7 +176,14 @@ def fig_trip(plt, trip_rows, out, env="mid"):
 
 
 # ─── KPI ───────────────────────────────────────────────────────────────────
-def build_kpis(sweep_rows, trip_rows, samples, compute_csv="sim/results/2/compute_summary.csv"):
+def _latest_compute_csv():
+    """sim/results/ 底下編號最大、含 compute_summary.csv 的資料夾 (bench_compute 的最新結果)。"""
+    runs = [d for d in os.listdir("sim/results") if d.isdigit()
+            and os.path.exists(os.path.join("sim/results", d, "compute_summary.csv"))]
+    return os.path.join("sim/results", max(runs, key=int), "compute_summary.csv") if runs else None
+
+
+def build_kpis(sweep_rows, trip_rows, samples, compute_csv=None):
     sw   = {(r["per_ref_pct"], r["packet"], r["mode"]): r for r in sweep_rows}
     trip = {(r["env"], r["packet"], r["mode"]): r for r in trip_rows}
     kpis = []
@@ -206,10 +213,11 @@ def build_kpis(sweep_rows, trip_rows, samples, compute_csv="sim/results/2/comput
             add(f"{env}_first_try_pct", tag, a["first_try_rate_pct"], b["first_try_rate_pct"], "%", "higher")
             add(f"{env}_attempts_mean", tag, a["attempts_mean"], b["attempts_mean"], "times")
             add(f"{env}_bytes_per_green", tag, a["bytes_up_mean"], b["bytes_up_mean"], "B")
-    if os.path.exists(compute_csv):
+    if compute_csv and os.path.exists(compute_csv):
         with open(compute_csv, encoding="utf-8-sig") as fh:
             c = {r["項目代碼"]: float(r["平均(ms)"]) for r in csv.DictReader(fh)}
-        add("rsu_compute_per_msg_ms", "full cold -> short prewarmed (run 2)",
+        run_no = os.path.basename(os.path.dirname(compute_csv))
+        add("rsu_compute_per_msg_ms", f"full cold -> short prewarmed (run {run_no})",
             c["rsu_message_e2e_full_cold"], c["rsu_message_e2e_short_prewarmed"], "ms")
     return kpis
 
@@ -258,7 +266,8 @@ def main():
             trip_rows.append(_summarize(trip_args, {"env": env, "channel": ch, "packet": p, "mode": m},
                                         rows, samples[(p, m)]))
 
-    kpis = build_kpis(sweep_rows, trip_rows, samples)
+    compute_csv = _latest_compute_csv()
+    kpis = build_kpis(sweep_rows, trip_rows, samples, compute_csv)
     _write_csv(os.path.join(out, "loss_sweep.csv"), sweep_rows, SWEEP_HEADERS)
     _write_csv(os.path.join(out, "trip.csv"), trip_rows, TRIP_HEADERS)
     _write_csv(os.path.join(out, "kpis.csv"), kpis, KPI_HEADERS)
@@ -282,6 +291,7 @@ def main():
                        "queue_ms": trip_args.queue_ms, "alpha": trip_args.alpha, "d_ref": trip_args.d_ref,
                        "loss_model": "iid"},
         "costs_ms": costs,
+        "compute_kpi_source": compute_csv,
     }
     with open(os.path.join(out, "params.json"), "w", encoding="utf-8") as f:
         json.dump(params, f, ensure_ascii=False, indent=2)

@@ -3,6 +3,7 @@ from collections import OrderedDict
 from ecdsa import NIST256p, VerifyingKey
 import ecdsa.ellipticcurve as ellipticcurve
 from cryptography.hazmat.primitives import serialization
+import pki
 
 PQC_SIG_NAME = "ML-DSA-44"
 
@@ -70,13 +71,26 @@ def update_pqc_pub_cache(obu_id_raw, pqc_pub, rsu_id=1, expire_at=None):
     if len(cache) > MAX_CACHE_SIZE:
         cache.popitem(last=False)
 
-def inject_prewarm_cache(target_rsu_id: int, obu_id_raw: bytes, P_U_bytes: bytes, vk, pqc_pub: bytes, expire_at: float = None):
+def ecqv_cache_key(obu_id_raw: bytes, role: int, P_U_bytes: bytes, pqc_pub_hash: bytes):
+    """
+    【安全修正 F-7】ECQV 公鑰快取鍵必須涵蓋 Q_U 的全部輸入 (ID, role, P_U, H(pk_PQC))。
+    原本只用 (ID, P_U)：快取命中後，宣稱不同 pqc_pub_hash 的封包仍沿用舊 Q_U 驗 ECC，
+    中間人可轉送合法 SRM 並換上自己的 PQC 公鑰與簽章，通過驗證並污染 PQC 公鑰快取；
+    量子攻擊者只要破解車輛自己的 ECDSA 金鑰 (不需 CA 金鑰) 就能取得綠燈。
+    """
+    return (obu_id_raw, role, P_U_bytes, pqc_pub_hash)
+
+def inject_prewarm_cache(target_rsu_id: int, obu_id_raw: bytes, P_U_bytes: bytes, vk, pqc_pub: bytes,
+                         expire_at: float = None, role: int = None):
     """
     路側有線骨幹 (Backhaul) 預同步注入：
     直接將 RSU-1 算好的 vk (Q_U) 與 PQC 公鑰注入目標下游路口的記憶體快取。
     下游路口免算點乘重構，達成零冷啟動！
+    role：憑證角色 (快取鍵的一部分，必填)
     """
-    cache_key = (obu_id_raw, P_U_bytes)
+    if role is None:
+        raise ValueError("inject_prewarm_cache 需要憑證角色 role")
+    cache_key = ecqv_cache_key(obu_id_raw, role, P_U_bytes, hashlib.sha256(pqc_pub).digest())
     update_key_cache(cache_key, vk, rsu_id=target_rsu_id, expire_at=expire_at)
     update_pqc_pub_cache(obu_id_raw, pqc_pub, rsu_id=target_rsu_id, expire_at=expire_at)
 
@@ -92,7 +106,7 @@ def purge_obu_cache(obu_id, rsu_id=1):
         obu_id_raw = bytes(obu_id)
 
     get_pqc_cache(rsu_id).pop(obu_id_raw, None)
-    # ECQV 公鑰快取以 (obu_id_raw, P_U) 為鍵，同一車可能有多個 P_U，全部清除
+    # ECQV 公鑰快取以 (obu_id_raw, role, P_U, pqc_pub_hash) 為鍵，同一車可能有多筆，全部清除
     key_cache = get_key_cache(rsu_id)
     for cache_key in [k for k in key_cache if k[0] == obu_id_raw]:
         del key_cache[cache_key]
@@ -134,10 +148,10 @@ def parse_header(header_bytes):
     total_frags = total_wire & 0x7F
     return seq_num, total_frags, msg_id, is_xor
 
-def reconstruct_obu_pubkey(obu_id_bytes: bytes, P_U_bytes: bytes, pqc_pub_hash: bytes):
+def reconstruct_obu_pubkey(obu_id_bytes: bytes, P_U_bytes: bytes, pqc_pub_hash: bytes, role: int):
     """
     ECQV 公鑰重構公式：
-      1. e = SHA256(ID || P_U || pqc_pub_hash) mod n
+      1. e = SHA256(ID || role || P_U || pqc_pub_hash) mod n   (【安全修正 F-2】角色納入糾纏值)
       2. Q_U = e * P_U + Q_CA
     """
     curve = NIST256p
@@ -150,8 +164,7 @@ def reconstruct_obu_pubkey(obu_id_bytes: bytes, P_U_bytes: bytes, pqc_pub_hash: 
     Q_CA = ellipticcurve.PointJacobi(curve.curve, ca_numbers.x, ca_numbers.y, 1)
 
     # 2. 算糾纏值 e
-    entangled_data = obu_id_bytes + P_U_bytes + pqc_pub_hash
-    e = int(hashlib.sha256(entangled_data).hexdigest(), 16) % n
+    e = pki.ecqv_e(obu_id_bytes, role, P_U_bytes, pqc_pub_hash)
 
     # 3. 執行橢圓曲線乘加運算
     P_U = ellipticcurve.PointJacobi.from_bytes(curve.curve, P_U_bytes)
@@ -159,12 +172,51 @@ def reconstruct_obu_pubkey(obu_id_bytes: bytes, P_U_bytes: bytes, pqc_pub_hash: 
 
     return VerifyingKey.from_public_point(Q_U, curve=NIST256p)
 
+ECQV_FIELDS_LEN = 8 + 1 + 33 + 32 + 32   # ID | role | P_U | pqc_pub_hash | pqc_sig_hash
+
+_CA_PQC_PUB = None
+
+def _ca_pqc_pub():
+    """CA ML-DSA-44 根公鑰 (RSU setup 時取得，原本從未使用)。"""
+    global _CA_PQC_PUB
+    if _CA_PQC_PUB is None:
+        with open("RSU/keys/ca_pqc_pub.key", "rb") as f:
+            _CA_PQC_PUB = f.read()
+    return _CA_PQC_PUB
+
+def _read_ecqv_fields(buf, start):
+    """ID (8B) | role (1B) | P_U (33B) | pqc_pub_hash (32B) | pqc_sig_hash (32B)"""
+    obu_id_raw   = buf[start : start + 8]
+    role         = buf[start + 8]
+    P_U_bytes    = buf[start + 9 : start + 42]
+    pqc_pub_hash = buf[start + 42 : start + 74]
+    pqc_sig_hash = buf[start + 74 : start + 106]
+    return obu_id_raw, role, P_U_bytes, pqc_pub_hash, pqc_sig_hash, start + ECQV_FIELDS_LEN
+
+def role_authorized(cert_role: int, payload: dict) -> bool:
+    """
+    【安全修正 F-2】原本 RSU 只看 SRM 自稱的 role，任何已註冊車輛都能自稱救護車。
+    現在角色由 CA 寫入憑證 (綁進 ECQV 糾纏值)，必須是緊急車輛角色，且與 SRM 宣稱的 role 一致。
+    """
+    claimed = payload.get("requestor", {}).get("type", {}).get("role")
+    return cert_role in pki.EMERGENCY_ROLES and claimed == cert_role
+
+def _get_vk(obu_id_raw, role, P_U_bytes, pqc_pub_hash, rsu_id):
+    """優先查快取 (鍵涵蓋 Q_U 全部輸入)，未命中則現場重構 Q_U。回傳 (vk, cache_key)。"""
+    cache_key = ecqv_cache_key(obu_id_raw, role, P_U_bytes, pqc_pub_hash)
+    vk = query_key_cache(cache_key, rsu_id=rsu_id)
+    if vk is None:
+        vk = reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_pub_hash, role)
+    return vk, cache_key
+
 def verify_f1_ecc(f1_chunk, rsu_id=1):
     """
-    從 F1 碎片中提取分片承諾雜湊清單、BSM 訊息與 ECC 簽章並進行快速驗證
+    從 F1 碎片中提取分片承諾雜湊清單、SRM 訊息與 ECC 簽章並進行快速驗證
     F1 佈局：
       num_hashes (1B) | [H_2 (32B)] | [H_3 (32B)]... |
-      msg_len (2B) | msg | ecc_sig_len (1B) | ecc_sig | ID (8B) | P_U (33B) | pqc_pub_hash (32B)
+      msg_len (2B) | msg | ecc_sig_len (1B) | ecc_sig |
+      ID (8B) | role (1B) | P_U (33B) | pqc_pub_hash (32B) | pqc_sig_hash (32B)
+    ECC 簽章涵蓋 msg ‖ pqc_sig_hash (F-1)；角色須為緊急車輛且與 SRM 一致 (F-2)。
     """
     try:
         # 1. 提取後續分片雜湊承諾 (Fragment Commitment)
@@ -192,38 +244,28 @@ def verify_f1_ecc(f1_chunk, rsu_id=1):
         end += ecc_sig_len
         ecc_sig = f1_chunk[start:end]
 
-        # 提取 ECQV 輕量憑證開頭：ID (8B) | P_U (33B) | pqc_pub_hash (32B)
-        start = end
-        end += 8
-        obu_id_raw = f1_chunk[start:end]
+        # 提取 ECQV 輕量憑證欄位
+        obu_id_raw, role, P_U_bytes, pqc_pub_hash, pqc_sig_hash, end = _read_ecqv_fields(f1_chunk, end)
+        if len(pqc_sig_hash) != 32:
+            return False, None, None, None, None
         obu_id_str = obu_id_raw.decode('utf-8').rstrip('\x00')
 
-        start = end
-        end += 33
-        P_U_bytes = f1_chunk[start:end]
-
-        start = end
-        end += 32
-        pqc_pub_hash = f1_chunk[start:end]
-
-        # 1. 優先查純記憶體快取 (支援有線骨幹預熱注入之 vk，0 ns，無磁碟 I/O，免重算 Q_U 點乘)
-        cache_key = (obu_id_raw, P_U_bytes) # 複合金鑰
-        vk = query_key_cache(cache_key, rsu_id=rsu_id)
-        if vk is not None:
-            pass  # 命中快取！免重構 Q_U 點乘！
-        else:
-            # 未命中則現場從 33-byte P_U 自癒重構 (徹底消除狀態失步)
-            vk = reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_pub_hash)
+        # 1. 優先查純記憶體快取 (支援有線骨幹預熱注入之 vk，免重算 Q_U 點乘)
+        vk, cache_key = _get_vk(obu_id_raw, role, P_U_bytes, pqc_pub_hash, rsu_id)
 
         # 先驗證簽章！
-        if not vk.verify(ecc_sig, payload_bytes, hashfunc=hashlib.sha256):
+        if not vk.verify(ecc_sig, pki.obu_ecc_tbs(payload_bytes, pqc_sig_hash), hashfunc=hashlib.sha256):
             return False, obu_id_str, None, None, None
 
         # 3. 簽章通過才安全寫入
         update_key_cache(cache_key, vk, rsu_id=rsu_id)
 
-        # 檢查時間戳防重放攻擊 (150ms)
         f1_data = json.loads(payload_bytes.decode('utf-8'))
+        if not role_authorized(role, f1_data):
+            print(f"車輛 {obu_id_str} 憑證角色 {role} 無緊急優先權或與 SRM 宣稱角色不符，拒絕閃黃燈")
+            return False, obu_id_str, None, None, None
+
+        # 檢查時間戳防重放攻擊 (150ms)
         f1_latency = time.time() - f1_data.get("full_timestamp", 0)
         if f1_latency > 0.15:
             print(f"F1 訊息已過期 (延遲 {f1_latency*1000:.1f}ms > 150ms)，疑似重放攻擊")
@@ -242,8 +284,10 @@ def parse_packet(packet, rsu_id=1):
     完整封包解析與驗證：
     封包格式：
       msg_len (2B) | payload | ecc_sig_len (1B) | ecc_sig |
-      ID (8B) | P_U (33B) | pqc_pub_hash (32B) | ca_pqc_sig_len (2B) | ca_pqc_sig |
-      pqc_pub_len (2B) | pqc_pub | pqc_sig_len (2B) | pqc_sig
+      ID (8B) | role (1B) | P_U (33B) | pqc_pub_hash (32B) | pqc_sig_hash (32B) |
+      pqc_pub_len (2B) | [pqc_pub | ca_cert_len (2B) | ca_pqc_cert] | pqc_sig_len (2B) | pqc_sig
+    驗證順序：ECC (含角色) → H(sig_PQC) 比對 → PQC 公鑰綁定 / CA 後量子憑證 → ML-DSA。
+    先確認 ECC 簽章涵蓋的 H(sig_PQC) 與收到的簽章一致，ML-DSA 失敗才能歸責於車輛本身 (F-1)。
     """
     global LAST_VERIFIED_AUTH, LAST_PARSE_STATUS
     # 【修正】每次解析前重設狀態，避免沿用上一個封包的結果。
@@ -266,47 +310,24 @@ def parse_packet(packet, rsu_id=1):
         obu_ecc_sig = packet[start:end]
 
         # ECQV 憑證欄位
-        start = end
-        end += 8
-        obu_id_raw = packet[start:end]
+        obu_id_raw, role, P_U_bytes, pqc_pub_hash, pqc_sig_hash, end = _read_ecqv_fields(packet, end)
         obu_id_str = obu_id_raw.decode('utf-8').rstrip('\x00')
-        start = end
-        end += 33
-        P_U_bytes = packet[start:end]
-        start = end
-        end += 32
-        pqc_pub_hash = packet[start:end]
+
         # 提取 OBU 的 PQC 公鑰 (若 pqc_pub_len == 0 則為 Short 模式，由記憶體快取還原)
         start = end
         end += 2
         pqc_pub_len = int(struct.unpack('!H', packet[start:end])[0])
         is_short_mode = (pqc_pub_len == 0)
-        
-        if is_short_mode:
-            # 二次通訊 (Short 模式)：從記憶體快取還原 PQC 公鑰
-            obu_pqc_pub = query_pqc_pub_cache(obu_id_raw, rsu_id=rsu_id)
-            if obu_pqc_pub is not None:
-                pass
-            else:
-                LAST_PARSE_STATUS = "NEED_CERT"
-                print(f"收到 Short 封包但路口 {rsu_id} 記憶體查無快取公鑰 (車輛: {obu_id_str})，需退回 Full 模式補憑證")
-                return None
-        else:
-            # 首次通訊 (Full 模式)：接收完整 1312B 公鑰
+        obu_pqc_pub = ca_pqc_cert = None
+        if not is_short_mode:
             start = end
             end += pqc_pub_len
             obu_pqc_pub = packet[start:end]
+            ca_cert_len = int(struct.unpack('!H', packet[end:end + 2])[0])
+            ca_pqc_cert = packet[end + 2 : end + 2 + ca_cert_len]
+            end += 2 + ca_cert_len
 
-            # 1. 雜湊綁定檢查 (防 DoS 注入攻擊)：檢查完整公鑰是否吻合 F1 裡的 pqc_pub_hash
-            if hashlib.sha256(obu_pqc_pub).digest() != pqc_pub_hash:
-                LAST_PARSE_STATUS = "PQC_PUB_HASH_MISMATCH"
-                print(f"PQC 公鑰雜湊不符，疑似偽造公鑰攻擊！(車輛: {obu_id_str})")
-                return None
-
-            # 【修正】此處僅完成雜湊綁定檢查，尚未驗證 ML-DSA / ECC 簽章，
-            # 因此不在這裡寫入快取；改到所有簽章驗證通過後才寫入 (真正的 Verify-then-Cache)。
-
-        # 2. 提取 OBU 的 PQC 簽章
+        # 提取 OBU 的 PQC 簽章
         start = end
         end += 2
         obu_pqc_sig_len = int(struct.unpack('!H', packet[start:end])[0])
@@ -314,7 +335,56 @@ def parse_packet(packet, rsu_id=1):
         end += obu_pqc_sig_len
         obu_pqc_sig = packet[start:end]
 
-        # 3. 驗證 OBU 的 PQC 簽章 (ML-DSA-44 抗量子安全)
+        # 1. 驗證 OBU 的 ECC 簽章 (涵蓋 payload ‖ H(sig_PQC)) 與憑證角色
+        vk, cache_key = _get_vk(obu_id_raw, role, P_U_bytes, pqc_pub_hash, rsu_id)
+        if not vk.verify(obu_ecc_sig, pki.obu_ecc_tbs(payload_bytes, pqc_sig_hash), hashfunc=hashlib.sha256):
+            LAST_PARSE_STATUS = "ECC_SIG_FAIL"
+            print(f"OBU ECC 簽章驗證失敗(車輛: {obu_id_str})")
+            return None
+        payload = json.loads(payload_bytes.decode('utf-8'))
+        if not role_authorized(role, payload):
+            LAST_PARSE_STATUS = "ROLE_DENIED"
+            print(f"車輛 {obu_id_str} 憑證角色 {role} 無緊急優先權或與 SRM 不符")
+            return None
+
+        # 2. 【安全修正 F-1】收到的 PQC 簽章必須是車輛 ECC 簽章所承諾的那一個；
+        # 不符代表傳輸途中遭竄改 (無法歸責於車輛)，只丟棄、不封鎖。
+        if hashlib.sha256(obu_pqc_sig).digest() != pqc_sig_hash:
+            LAST_PARSE_STATUS = "PQC_SIG_HASH_MISMATCH"
+            print(f"PQC 簽章與 ECC 簽章承諾的 H(sig_PQC) 不符，疑似傳輸途中遭竄改 (車輛: {obu_id_str})")
+            return None
+
+        if is_short_mode:
+            # 二次通訊 (Short 模式)：從記憶體快取還原 PQC 公鑰
+            obu_pqc_pub = query_pqc_pub_cache(obu_id_raw, rsu_id=rsu_id)
+            # 【安全修正 F-7】快取公鑰必須吻合本次 ECQV 憑證的 pqc_pub_hash，否則視同快取未命中
+            # (例如車輛重新註冊換了 PQC 金鑰)，要求補送 Full。
+            if obu_pqc_pub is None or hashlib.sha256(obu_pqc_pub).digest() != pqc_pub_hash:
+                LAST_PARSE_STATUS = "NEED_CERT"
+                print(f"收到 Short 封包但路口 {rsu_id} 記憶體查無相符的快取公鑰 (車輛: {obu_id_str})，需退回 Full 模式補憑證")
+                return None
+        else:
+            # 首次通訊 (Full 模式)：接收完整 1312B 公鑰
+            # 3. 雜湊綁定檢查 (防 DoS 注入攻擊)：檢查完整公鑰是否吻合 F1 裡的 pqc_pub_hash
+            if hashlib.sha256(obu_pqc_pub).digest() != pqc_pub_hash:
+                LAST_PARSE_STATUS = "PQC_PUB_HASH_MISMATCH"
+                print(f"PQC 公鑰雜湊不符，疑似偽造公鑰攻擊！(車輛: {obu_id_str})")
+                return None
+
+            # 4. 【安全修正 F-5】驗證 CA 的 ML-DSA-44 後量子憑證 (ID ‖ role ‖ P_U ‖ H(pk_PQC))。
+            # ECQV 只靠 ECC，量子攻擊者破解 CA ECC 根金鑰即可綁定任意 PQC 公鑰；
+            # 此憑證讓 PQC 公鑰的信任錨回到後量子簽章。
+            with oqs.Signature(PQC_SIG_NAME) as verifier:
+                tbs = pki.ca_pqc_cert_tbs(obu_id_raw, role, P_U_bytes, pqc_pub_hash)
+                if not verifier.verify(tbs, ca_pqc_cert, _ca_pqc_pub()):
+                    LAST_PARSE_STATUS = "CA_CERT_FAIL"
+                    print(f"CA 後量子憑證驗證失敗 (車輛: {obu_id_str})")
+                    return None
+
+            # 【修正】此處僅完成綁定檢查，尚未驗證 ML-DSA 簽章，
+            # 因此不在這裡寫入快取；改到所有簽章驗證通過後才寫入 (真正的 Verify-then-Cache)。
+
+        # 5. 驗證 OBU 的 PQC 簽章 (ML-DSA-44 抗量子安全)
         with oqs.Signature(PQC_SIG_NAME) as verifier:
             if not verifier.verify(payload_bytes, obu_pqc_sig, obu_pqc_pub):
                 if is_short_mode:
@@ -322,24 +392,14 @@ def parse_packet(packet, rsu_id=1):
                     LAST_PARSE_STATUS = "SHORT_SIG_FAIL"
                     print(f"OBU Short 模式後量子簽章驗證失敗 (可能是快取過期/不同步)！(車輛: {obu_id_str})")
                 else:
-                    # Full 模式公鑰經由 F1 雜湊綁定承諾，簽章失敗構成強偽造證據
+                    # Full 模式：ECC 簽章已承諾此 PQC 簽章、公鑰經 CA 後量子憑證綁定，
+                    # 簽章仍失敗只可能是金鑰持有者自己簽出無效簽章 (古典攻擊者下的強證據)
                     LAST_PARSE_STATUS = "FULL_SIG_FAIL"
                     print(f"OBU Full 模式後量子簽章驗證失敗！(車輛: {obu_id_str})")
                 return None
 
-        # 驗證 OBU 的 ECC 簽章
-        cache_key = (obu_id_raw, P_U_bytes)
-        vk = query_key_cache(cache_key, rsu_id=rsu_id)
-        if vk is not None:
-            pass  # 命中快取！免重算 Q_U
-        else:
-            vk = reconstruct_obu_pubkey(obu_id_raw, P_U_bytes, pqc_pub_hash)
-        if not vk.verify(obu_ecc_sig, payload_bytes, hashfunc=hashlib.sha256):
-            LAST_PARSE_STATUS = "ECC_SIG_FAIL"
-            print(f"OBU ECC 簽章驗證失敗(車輛: {obu_id_str})")
-            return None
         update_key_cache(cache_key, vk, rsu_id=rsu_id)
-        # Full 模式：ML-DSA-44 與 ECC 簽章皆已通過，此時才將 PQC 公鑰寫入快取 (Verify-then-Cache)
+        # Full 模式：所有簽章皆已通過，此時才將 PQC 公鑰寫入快取 (Verify-then-Cache)
         if not is_short_mode:
             update_pqc_pub_cache(obu_id_raw, obu_pqc_pub, rsu_id=rsu_id)
 
@@ -347,6 +407,7 @@ def parse_packet(packet, rsu_id=1):
         LAST_VERIFIED_AUTH = {
             "obu_id_raw": obu_id_raw,
             "obu_id_str": obu_id_str,
+            "role": role,
             "P_U_bytes": P_U_bytes,
             "vk": vk,
             "pqc_pub": obu_pqc_pub
@@ -354,7 +415,7 @@ def parse_packet(packet, rsu_id=1):
         LAST_PARSE_STATUS = "OK"
 
         print(f"ECQV + ML-DSA-44 驗證全部通過")
-        return json.loads(payload_bytes.decode('utf-8'))
+        return payload
 
     except Exception as e:
         LAST_PARSE_STATUS = "PARSE_ERROR"

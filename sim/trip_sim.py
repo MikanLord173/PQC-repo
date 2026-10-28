@@ -332,7 +332,7 @@ def _init_worker(costs_ms):
 
 def _reset_rsu():
     rsu, parse = _W["rsu"], _W["parse"]
-    for d in (rsu.reassemble_buffer, rsu.recent_completed, rsu.id_active_session, rsu.id_session_meta,
+    for d in (rsu.reassemble_buffer, rsu.recent_completed, rsu.recent_granted, rsu.id_active_session, rsu.id_session_meta,
               rsu.ip_rate_log, rsu.obu_f1_rate_log, rsu.blacklist):
         d.clear()
     parse.clear_all_caches()
@@ -361,7 +361,8 @@ def _run_trial(args, packet_type, mode, ch):
     known = packet_type == "short"
     if known:
         a = _W["auth"]
-        parse.inject_prewarm_cache(RSU_ID, a["obu_id_raw"], a["P_U_bytes"], a["vk"], a["pqc_pub"], expire_at=None)
+        parse.inject_prewarm_cache(RSU_ID, a["obu_id_raw"], a["P_U_bytes"], a["vk"], a["pqc_pub"], expire_at=None,
+                                   role=a["role"])
 
     t_arr = args.distance / args.speed_mps
     sock  = CaptureSock(clock)

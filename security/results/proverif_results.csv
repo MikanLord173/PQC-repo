@@ -1,0 +1,30 @@
+﻿情境,情境說明,性質代碼,性質說明,驗證結果,ProVerif 查詢
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",green_auth,green for idA implies idA sent that SRM,false,"event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",yellow_auth,flashing yellow for idA implies idA sent that SRM,false,"event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",green_injective,each SRM triggers at most one green (replay),false,"inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3))"
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",secret_pq_key,vehicle ML-DSA private key stays secret,true,not attacker(pskA[])
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",secret_ca_ecc_key,CA ECC private key stays secret,true,not attacker(skCA[])
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",no_blacklist,attacker cannot get the honest vehicle blacklisted,false,not event(Blacklist(idA[]))
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",green_authorized,green only for CA-enrolled emergency vehicles,false,"event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))"
+classical,"classical attacker, design at commit 86e284f (open CA enrollment, unsigned SSM)",ssm_auth,SSM accepted by OBU was sent by the RSU,false,"event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1))"
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",green_auth,green for idA implies idA sent that SRM,true,"event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",yellow_auth,flashing yellow for idA implies idA sent that SRM,true,"event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",green_injective,each SRM triggers at most one green (replay),false,"inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3))"
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",secret_pq_key,vehicle ML-DSA private key stays secret,true,not attacker(pskA[])
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",secret_ca_ecc_key,CA ECC private key stays secret,true,not attacker(skCA[])
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",no_blacklist,attacker cannot get the honest vehicle blacklisted,true,not event(Blacklist(idA[]))
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",green_authorized,green only for CA-enrolled emergency vehicles,true,"event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))"
+classical_fixed,"classical attacker, fixed design as implemented (F-1..F-6)",ssm_auth,SSM accepted by OBU was sent by the RSU,true,"event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4))"
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",green_auth,green for idA implies idA sent that SRM,false,"event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",yellow_auth,flashing yellow for idA implies idA sent that SRM,false,"event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",secret_pq_key,vehicle ML-DSA private key stays secret,true,not attacker(pskA[])
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",no_blacklist,attacker cannot get the honest vehicle blacklisted,false,not event(Blacklist(idA[]))
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",green_authorized,green only for CA-enrolled emergency vehicles,false,"event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))"
+quantum,"quantum attacker (all ECC keys broken), design at commit 86e284f",ssm_auth,SSM accepted by OBU was sent by the RSU,false,"event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1))"
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",green_auth,green for idA implies idA sent that SRM,true,"event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",yellow_auth,flashing yellow for idA implies idA sent that SRM,false,"event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))"
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",secret_pq_key,vehicle ML-DSA private key stays secret,true,not attacker(pskA[])
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",secret_ca_pq_key,CA ML-DSA private key stays secret,true,not attacker(pskCA[])
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",no_blacklist,attacker cannot get the honest vehicle blacklisted,false,not event(Blacklist(idA[]))
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",green_authorized,green only for CA-enrolled emergency vehicles,true,"event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))"
+quantum_fixed,"quantum attacker (all ECC keys broken), fixed design as implemented (F-1..F-6)",ssm_auth,SSM accepted by OBU was sent by the RSU,false,"event(OBUAcceptSSM(i_2,st_4)) ==> event(RSUSentSSM(i_2,st_4))"

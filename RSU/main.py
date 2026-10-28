@@ -4,6 +4,7 @@ import socket, time, os
 # f1_ts 永遠等於 now → 「舊/重複 F1 去重」永遠不成立，重放的 F1 反而會取代合法會話。
 import json
 import RSU.parse as parse
+import pki
 
 try:
     from dotenv import load_dotenv
@@ -43,7 +44,7 @@ def get_downstream_rsus(current_id: int, srm_data: dict = None) -> list:
 
 def trigger_inter_rsu_prewarm(current_rsu_id: int, obu_id_raw: bytes, P_U_bytes: bytes,
                               vk_ecc, obu_pqc_pub: bytes, srm_data: dict = None,
-                              rsu_cluster: dict = None) -> list:
+                              rsu_cluster: dict = None, role: int = None) -> list:
     """
     路側有線骨幹 (Backhaul) 主動預同步：
     當 RSU 完成雙簽驗證後，透過有線骨幹網路將 (Q_U, PK_PQC, ETA) 主動注入下游路口。
@@ -69,9 +70,9 @@ def trigger_inter_rsu_prewarm(current_rsu_id: int, obu_id_raw: bytes, P_U_bytes:
     for target_id in downstream_ids:
         if rsu_cluster and target_id in rsu_cluster:
             target_rsu = rsu_cluster[target_id]
-            target_rsu.inject_prewarm(obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at)
+            target_rsu.inject_prewarm(obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at, role=role)
         else:
-            parse.inject_prewarm_cache(target_id, obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at)
+            parse.inject_prewarm_cache(target_id, obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at, role=role)
         prewarmed_list.append(target_id)
         print(f"  [有線骨幹預同步] 已將已驗證金鑰 (Q_U, PK_PQC) 推送至下游路口 {target_id} (TTL: {eta+30:.0f}s)")
 
@@ -97,6 +98,12 @@ reassemble_buffer = {}
 
 # 最近已完成重組的 (msg_id, addr)，避免尾巴重複分片再次觸發新 session
 recent_completed = {}
+
+# 【安全修正 F-4】最近已放行的 SRM：recent_granted[(obu_id, full_timestamp)] = 放行時間。
+# recent_completed 以 (msg_id, 來源位址) 為鍵，攻擊者在 150ms 時效內換個來源位址重放已完成的請求，
+# 會被當成新會話再放行一次。改以「車輛 ID + SRM 時間戳」辨識同一則請求。
+recent_granted = {}
+GRANT_DEDUP_WINDOW = 2.0   # 秒；需大於 150ms 時效視窗
 
 # ─── 活躍會話索引 & 密碼學硬黑名單 ──────────────────────────────────────────
 # id_active_session[obu_id] = session_key  →  快速查詢該 ID 當前佔用的 session
@@ -181,6 +188,10 @@ def prune_expired_sessions():
         if now - done_time > 2.0:
             del recent_completed[key]
 
+    for key, granted_at in list(recent_granted.items()):
+        if now - granted_at > GRANT_DEDUP_WINDOW:
+            del recent_granted[key]
+
     # 清理已過期的黑名單條目 (TTL 自動過期解除)
     for identifier in list(blacklist.keys()):
         if now >= blacklist[identifier]:
@@ -223,6 +234,28 @@ def prune_expired_sessions():
         else:
             print(f"  [未認證超時] 匿名來源 {addr} 超時（F1 未通過驗證），清除碎片暫存。\n")
 
+# ─── SSM 簽章 (F-6) ───────────────────────────────────────────────────────────
+# 【安全修正 F-6】原本下行 SSM 是明文 JSON，任何人都能偽造 status=6 迫使車輛退回 Full (多耗頻寬)，
+# 或偽造 status=4 + prewarmed_rsus 讓車輛在下游誤用 Short。現在每個 RSU 持有 CA 簽發的 ECDSA 金鑰，
+# SSM 夾帶 RSU 憑證與簽章，OBU 驗證後才更新白名單。金鑰由 python3 -m RSU.setup 配發。
+_rsu_signers = {}
+
+def _rsu_signer(rsu_id):
+    if rsu_id not in _rsu_signers:
+        from ecdsa import SigningKey
+        with open(f"RSU/keys/rsu_{rsu_id}_ecc_priv.key", "rb") as f:
+            sk = SigningKey.from_der(f.read())
+        with open(f"RSU/keys/rsu_{rsu_id}_cert.json", "r", encoding="utf-8") as f:
+            cert = json.load(f)
+        _rsu_signers[rsu_id] = (sk, cert)
+    return _rsu_signers[rsu_id]
+
+def send_signed_ssm(sock, ssm_payload, addr, rsu_id):
+    sk, cert = _rsu_signer(rsu_id)
+    ssm_bytes = json.dumps(pki.sign_ssm(ssm_payload, sk, cert), separators=(',', ':')).encode('utf-8')
+    sock.sendto(ssm_bytes, addr)
+    return ssm_bytes
+
 # ─── 共用：重組完成後的密碼驗證與 SSM 回條（DUP 與 XOR 兩個路徑共用）─────────
 def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
     """封包重組完成後，清理緩衝區並執行密碼驗證→放行流程。"""
@@ -244,6 +277,13 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
             print(f"\n[逾期] 封包總延遲 ({total_latency*1000:.1f}ms > 150ms)，疑似重放攻擊！")
             print(f"拒絕放行，號誌維持正常週期\n")
             return
+
+        # 【安全修正 F-4】同一則 SRM (車輛 ID + 時間戳) 只放行一次
+        grant_key = (parse.LAST_VERIFIED_AUTH.get("obu_id_str"), payload['full_timestamp'])
+        if grant_key in recent_granted:
+            print(f"\n[安全防護 重放] 車輛 {grant_key[0]} 的 SRM (ts={grant_key[1]:.3f}) 已放行過，拒絕重複放行\n")
+            return
+        recent_granted[grant_key] = time.time()
 
         print(f"\n[來自 {addr}] 驗證成功，切換緊急綠燈")
         print(f"[Pre-warming] 向鄰近號誌發送預熱訊號")
@@ -274,11 +314,11 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
                     P_U_bytes=last_auth["P_U_bytes"],
                     vk_ecc=last_auth["vk"],
                     obu_pqc_pub=last_auth["pqc_pub"],
-                    srm_data=payload
+                    srm_data=payload,
+                    role=last_auth["role"]
                 )
 
             if sock is not None:
-                import json
                 from RSU.gen_payload import generate_ssm_payload
                 ssm_payload = generate_ssm_payload(
                     obu_id=req_id,
@@ -289,9 +329,8 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
                     sequence_number=payload.get("sequenceNumber", 1),
                     prewarmed_rsus=prewarmed_rsus
                 )
-                ssm_bytes = json.dumps(ssm_payload, separators=(',', ':')).encode('utf-8')
-                sock.sendto(ssm_bytes, addr)
-                print(f"  -> 已向車輛 {req_id} 回傳 SAE J2735 SSM 放行回條 (ACK, {len(ssm_bytes)} bytes)")
+                ssm_bytes = send_signed_ssm(sock, ssm_payload, addr, current_rsu)
+                print(f"  -> 已向車輛 {req_id} 回傳已簽章 SAE J2735 SSM 放行回條 (ACK, {len(ssm_bytes)} bytes)")
                 if prewarmed_rsus:
                     print(f"  -> SSM 夾帶預熱授權下游路口清單: {prewarmed_rsus}")
         else:
@@ -309,7 +348,6 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
         print(f"號誌維持正常週期\n")
         # ─── 悲觀降級：若為 Short 模式 Cache Miss 或 Short 驗簽失敗，回傳 status=6 (Need Cert / Fallback) ───
         if parse.LAST_PARSE_STATUS in ("NEED_CERT", "SHORT_SIG_FAIL") and sock is not None:
-            import json
             from RSU.gen_payload import generate_ssm_payload
             current_obu = session.get("obu_id", "AMB-217")
             # 若為 Short 模式驗簽失敗，視為快取不同步/損毀，清空該車公鑰快取
@@ -324,11 +362,13 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
                 intersection_id=current_rsu,
                 status=6
             )
-            nack_bytes = json.dumps(nack_payload, separators=(',', ':')).encode('utf-8')
-            sock.sendto(nack_bytes, addr)
+            send_signed_ssm(sock, nack_payload, addr, current_rsu)
             print(f"  -> 已向車輛發送 Fast-NACK (status=6，要求降級退回 Full 模式重試)\n")
         elif parse.LAST_PARSE_STATUS == "FULL_SIG_FAIL":
-            # 密碼學證據：Full 模式下憑證與 pk_pqc 均附帶且通過 ECQV 綁定，但 ML-DSA 驗簽失敗
+            # 密碼學證據：ECC 簽章已承諾此 ML-DSA 簽章 (F-1)，公鑰經 ECQV 與 CA 後量子憑證綁定，但 ML-DSA 驗簽失敗。
+            # 【安全修正 F-1】原本 ECC 不涵蓋 PQC 簽章，中間人竄改簽章即可觸發此封鎖 (T5)；
+            # 現在中間人竄改會落在 PQC_SIG_HASH_MISMATCH (只丟棄不封鎖)。
+            # 殘餘風險：量子攻擊者可偽造 ECC 簽章，仍能誘發此封鎖 (見 THREAT_MODEL.md Q1)。
             violator = session.get("obu_id") or str(addr)
             trigger_hard_blacklist(violator, "Full 模式下 ML-DSA-44 重組簽章驗證失敗 (強證據：偽造後量子簽章)")
         else:
@@ -486,6 +526,12 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
                     f1_ts = json.loads(payload_bytes.decode('utf-8')).get("full_timestamp", now)
                 except Exception:
                     f1_ts = now
+
+                # 【安全修正 F-4】已放行過的同一則 SRM 不再開新會話 (連閃黃燈都不觸發)
+                if (obu_id_str, f1_ts) in recent_granted:
+                    print(f"[安全防護 重放] 車輛 {obu_id_str} 的 SRM (ts={f1_ts:.3f}) 已放行過，忽略重放的 F1")
+                    del reassemble_buffer[session_key]
+                    return
 
                 # ─── 密碼學硬黑名單檢查 (車輛 ID 具 TTL，只有重組後 ML-DSA 失敗會被記) ───
                 if obu_id_str in blacklist:

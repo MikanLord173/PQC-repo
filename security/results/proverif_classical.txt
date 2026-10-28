@@ -1,0 +1,824 @@
+Process 0 (that is, the initial process):
+{1}let qca: pkey = eccpk(skCA) in
+{2}out(c, qca);
+{3}let pkA: bitstring = ppk(pskA) in
+{4}let skA: skey = ecqvSK(skCA,idA,h(pkA),puA) in
+{5}event EmergencyEnrolled(idA);
+{6}insert pkCache(idA,pkA);
+(
+    {7}!
+    {8}let tag: bitstring = full in
+    {9}let id: bitstring = idA in
+    {10}let pu: bitstring = puA in
+    {11}let psk: pqsk = pskA in
+    {12}new ts: bitstring;
+    {13}let m: bitstring = (id,ts,ambulance) in
+    {14}event OBUSent(id,m);
+    {15}out(c, (tag,m,esign(m,skA),id,pu,h(ppk(psk)),pkA,psign(m,psk)))
+) | (
+    {16}!
+    {17}let tag_1: bitstring = short in
+    {18}let pkpart: bitstring = none in
+    {19}let id_1: bitstring = idA in
+    {20}let pu_1: bitstring = puA in
+    {21}let psk_1: pqsk = pskA in
+    {22}new ts_1: bitstring;
+    {23}let m_1: bitstring = (id_1,ts_1,ambulance) in
+    {24}event OBUSent(id_1,m_1);
+    {25}out(c, (tag_1,m_1,esign(m_1,skA),id_1,pu_1,h(ppk(psk_1)),pkpart,psign(m_1,psk_1)))
+) | (
+    {26}!
+    {27}in(c, (tag_2: bitstring,m_2: bitstring,esig: bitstring,id_2: bitstring,pu_2: bitstring,hq: bitstring,pkin: bitstring,psig: bitstring));
+    {28}let (mid: bitstring,ts_2: bitstring,role: bitstring) = m_2 in
+    {29}if (role = ambulance) then
+    {30}if (everifyQ(esig,m_2,qca,id_2,hq,pu_2) = true) then
+    {31}event RSUYellow(id_2,m_2);
+    {32}if (tag_2 = full) then
+    (
+        {33}if (h(pkin) = hq) then
+        {34}let ok: bool = pverify(psig,m_2,pkin) in
+            {35}insert pkCache(id_2,pkin);
+            {36}event RSUGreen(id_2,m_2);
+            {37}event RSUSentSSM(id_2,granted);
+            {38}out(c, (id_2,granted))
+        else
+            {39}event Blacklist(id_2)
+    )
+    else
+        {40}if (tag_2 = short) then
+        {47}get pkCache(=id_2,pkc: bitstring) in
+        (
+            {41}let ok_1: bool = pverify(psig,m_2,pkc) in
+            {42}event RSUGreen(id_2,m_2);
+            {43}event RSUSentSSM(id_2,granted);
+            {44}out(c, (id_2,granted))
+        )
+        else
+            {45}event RSUSentSSM(id_2,needcert);
+            {46}out(c, (id_2,needcert))
+) | (
+    {48}!
+    {49}new idc: bitstring;
+    {50}new puc: bitstring;
+    {51}new pskc: pqsk;
+    {52}out(c, (idc,puc,pskc,ecqvSK(skCA,idc,h(ppk(pskc)),puc)))
+) | (
+    {53}!
+    {54}in(c, (i: bitstring,st: bitstring));
+    {55}event OBUAcceptSSM(i,st)
+) | (
+    {56}!
+    {57}in(c, (i_1: bitstring,hq_1: bitstring,pu_3: bitstring));
+    {58}out(c, ecqvSK(skCA,i_1,hq_1,pu_3))
+)
+
+--  Process 1 (that is, process 0, with let moved downwards):
+{1}let qca: pkey = eccpk(skCA) in
+{2}out(c, qca);
+{5}event EmergencyEnrolled(idA);
+{3}let pkA: bitstring = ppk(pskA) in
+{6}insert pkCache(idA,pkA);
+{4}let skA: skey = ecqvSK(skCA,idA,h(pkA),puA) in
+(
+    {7}!
+    {12}new ts: bitstring;
+    {9}let id: bitstring = idA in
+    {13}let m: bitstring = (id,ts,ambulance) in
+    {14}event OBUSent(id,m);
+    {11}let psk: pqsk = pskA in
+    {10}let pu: bitstring = puA in
+    {8}let tag: bitstring = full in
+    {15}out(c, (tag,m,esign(m,skA),id,pu,h(ppk(psk)),pkA,psign(m,psk)))
+) | (
+    {16}!
+    {22}new ts_1: bitstring;
+    {19}let id_1: bitstring = idA in
+    {23}let m_1: bitstring = (id_1,ts_1,ambulance) in
+    {24}event OBUSent(id_1,m_1);
+    {21}let psk_1: pqsk = pskA in
+    {20}let pu_1: bitstring = puA in
+    {18}let pkpart: bitstring = none in
+    {17}let tag_1: bitstring = short in
+    {25}out(c, (tag_1,m_1,esign(m_1,skA),id_1,pu_1,h(ppk(psk_1)),pkpart,psign(m_1,psk_1)))
+) | (
+    {26}!
+    {27}in(c, (tag_2: bitstring,m_2: bitstring,esig: bitstring,id_2: bitstring,pu_2: bitstring,hq: bitstring,pkin: bitstring,psig: bitstring));
+    {28}let (mid: bitstring,ts_2: bitstring,role: bitstring) = m_2 in
+    {29}if (role = ambulance) then
+    {30}if (everifyQ(esig,m_2,qca,id_2,hq,pu_2) = true) then
+    {31}event RSUYellow(id_2,m_2);
+    {32}if (tag_2 = full) then
+    (
+        {33}if (h(pkin) = hq) then
+        {34}let ok: bool = pverify(psig,m_2,pkin) in
+            {35}insert pkCache(id_2,pkin);
+            {36}event RSUGreen(id_2,m_2);
+            {37}event RSUSentSSM(id_2,granted);
+            {38}out(c, (id_2,granted))
+        else
+            {39}event Blacklist(id_2)
+    )
+    else
+        {40}if (tag_2 = short) then
+        {47}get pkCache(=id_2,pkc: bitstring) in
+        (
+            {41}let ok_1: bool = pverify(psig,m_2,pkc) in
+            {42}event RSUGreen(id_2,m_2);
+            {43}event RSUSentSSM(id_2,granted);
+            {44}out(c, (id_2,granted))
+        )
+        else
+            {45}event RSUSentSSM(id_2,needcert);
+            {46}out(c, (id_2,needcert))
+) | (
+    {48}!
+    {49}new idc: bitstring;
+    {50}new puc: bitstring;
+    {51}new pskc: pqsk;
+    {52}out(c, (idc,puc,pskc,ecqvSK(skCA,idc,h(ppk(pskc)),puc)))
+) | (
+    {53}!
+    {54}in(c, (i: bitstring,st: bitstring));
+    {55}event OBUAcceptSSM(i,st)
+) | (
+    {56}!
+    {57}in(c, (i_1: bitstring,hq_1: bitstring,pu_3: bitstring));
+    {58}out(c, ecqvSK(skCA,i_1,hq_1,pu_3))
+)
+
+-- Query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3))
+goal reachable: attacker(mid_1) && attacker(ts_3) -> event(RSUGreen(idA[],(mid_1,ts_3,ambulance)))
+
+Derivation:
+
+1. The attacker has some term k.
+attacker(k).
+
+2. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+3. We assume as hypothesis that
+attacker(ts_3).
+
+4. We assume as hypothesis that
+attacker(mid_1).
+
+5. By 4, the attacker may know mid_1.
+By 3, the attacker may know ts_3.
+By 2, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_1,ts_3,ambulance).
+attacker((mid_1,ts_3,ambulance)).
+
+6. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 1, the attacker may know k.
+Using the function psign the attacker may obtain psign((mid_1,ts_3,ambulance),k).
+attacker(psign((mid_1,ts_3,ambulance),k)).
+
+7. By 1, the attacker may know k.
+Using the function ppk the attacker may obtain ppk(k).
+attacker(ppk(k)).
+
+8. By 7, the attacker may know ppk(k).
+Using the function h the attacker may obtain h(ppk(k)).
+attacker(h(ppk(k))).
+
+9. The attacker has some term p.
+attacker(p).
+
+10. The attacker initially knows idA[].
+attacker(idA[]).
+
+11. By 10, the attacker may know idA[].
+By 8, the attacker may know h(ppk(k)).
+By 9, the attacker may know p.
+Using the function 3-tuple the attacker may obtain (idA[],h(ppk(k)),p).
+attacker((idA[],h(ppk(k)),p)).
+
+12. The message (idA[],h(ppk(k)),p) that the attacker may have by 11 may be received at input {57}.
+So the message ecqvSK(skCA[],idA[],h(ppk(k)),p) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],idA[],h(ppk(k)),p)).
+
+13. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 12, the attacker may know ecqvSK(skCA[],idA[],h(ppk(k)),p).
+Using the function esign the attacker may obtain esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p)).
+attacker(esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p))).
+
+14. Using the function full the attacker may obtain full.
+attacker(full).
+
+15. By 14, the attacker may know full.
+By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 13, the attacker may know esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p)).
+By 10, the attacker may know idA[].
+By 9, the attacker may know p.
+By 8, the attacker may know h(ppk(k)).
+By 7, the attacker may know ppk(k).
+By 6, the attacker may know psign((mid_1,ts_3,ambulance),k).
+Using the function 8-tuple the attacker may obtain (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p)),idA[],p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k)).
+attacker((full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p)),idA[],p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k))).
+
+16. The message (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p)),idA[],p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k)) that the attacker may have by 15 may be received at input {27}.
+So event RSUGreen(idA[],(mid_1,ts_3,ambulance)) may be executed at {36}.
+event(RSUGreen(idA[],(mid_1,ts_3,ambulance))).
+
+17. By 16, event(RSUGreen(idA[],(mid_1,ts_3,ambulance))).
+The goal is reached, represented in the following fact:
+event(RSUGreen(idA[],(mid_1,ts_3,ambulance))).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (idA,h(ppk(a)),a_1)) at {57} in copy a_2
+
+out(c, ~M_1) with ~M_1 = ecqvSK(skCA,idA,h(ppk(a)),a_1) at {58} in copy a_2
+
+in(c, (full,(a_3,a_4,ambulance),esign((a_3,a_4,ambulance),~M_1),idA,a_1,h(ppk(a)),ppk(a),psign((a_3,a_4,ambulance),a))) with esign((a_3,a_4,ambulance),~M_1) = esign((a_3,a_4,ambulance),ecqvSK(skCA,idA,h(ppk(a)),a_1)) at {27} in copy a_5
+
+event RSUYellow(idA,(a_3,a_4,ambulance)) at {31} in copy a_5
+
+insert pkCache(idA,ppk(a)) at {35} in copy a_5
+
+event RSUGreen(idA,(a_3,a_4,ambulance)) at {36} in copy a_5 (goal)
+
+The event RSUGreen(idA,(a_3,a_4,ambulance)) is executed at {36} in copy a_5.
+A trace has been found.
+RESULT event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is false.
+-- Query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3))
+goal reachable: attacker(mid_1) && attacker(ts_3) -> event(RSUYellow(idA[],(mid_1,ts_3,ambulance)))
+
+Derivation:
+
+1. The attacker has some term psig_1.
+attacker(psig_1).
+
+2. The attacker has some term pkin_1.
+attacker(pkin_1).
+
+3. The attacker has some term hq_2.
+attacker(hq_2).
+
+4. The attacker has some term p.
+attacker(p).
+
+5. The attacker initially knows idA[].
+attacker(idA[]).
+
+6. By 5, the attacker may know idA[].
+By 3, the attacker may know hq_2.
+By 4, the attacker may know p.
+Using the function 3-tuple the attacker may obtain (idA[],hq_2,p).
+attacker((idA[],hq_2,p)).
+
+7. The message (idA[],hq_2,p) that the attacker may have by 6 may be received at input {57}.
+So the message ecqvSK(skCA[],idA[],hq_2,p) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],idA[],hq_2,p)).
+
+8. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+9. We assume as hypothesis that
+attacker(ts_3).
+
+10. We assume as hypothesis that
+attacker(mid_1).
+
+11. By 10, the attacker may know mid_1.
+By 9, the attacker may know ts_3.
+By 8, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_1,ts_3,ambulance).
+attacker((mid_1,ts_3,ambulance)).
+
+12. By 11, the attacker may know (mid_1,ts_3,ambulance).
+By 7, the attacker may know ecqvSK(skCA[],idA[],hq_2,p).
+Using the function esign the attacker may obtain esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)).
+attacker(esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p))).
+
+13. The attacker has some term tag_3.
+attacker(tag_3).
+
+14. By 13, the attacker may know tag_3.
+By 11, the attacker may know (mid_1,ts_3,ambulance).
+By 12, the attacker may know esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)).
+By 5, the attacker may know idA[].
+By 4, the attacker may know p.
+By 3, the attacker may know hq_2.
+By 2, the attacker may know pkin_1.
+By 1, the attacker may know psig_1.
+Using the function 8-tuple the attacker may obtain (tag_3,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psig_1).
+attacker((tag_3,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psig_1)).
+
+15. The message (tag_3,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psig_1) that the attacker may have by 14 may be received at input {27}.
+So event RSUYellow(idA[],(mid_1,ts_3,ambulance)) may be executed at {31}.
+event(RSUYellow(idA[],(mid_1,ts_3,ambulance))).
+
+16. By 15, event(RSUYellow(idA[],(mid_1,ts_3,ambulance))).
+The goal is reached, represented in the following fact:
+event(RSUYellow(idA[],(mid_1,ts_3,ambulance))).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (idA,a,a_1)) at {57} in copy a_2
+
+out(c, ~M_1) with ~M_1 = ecqvSK(skCA,idA,a,a_1) at {58} in copy a_2
+
+in(c, (a_3,(a_4,a_5,ambulance),esign((a_4,a_5,ambulance),~M_1),idA,a_1,a,a_6,a_7)) with esign((a_4,a_5,ambulance),~M_1) = esign((a_4,a_5,ambulance),ecqvSK(skCA,idA,a,a_1)) at {27} in copy a_8
+
+event RSUYellow(idA,(a_4,a_5,ambulance)) at {31} in copy a_8 (goal)
+
+The event RSUYellow(idA,(a_4,a_5,ambulance)) is executed at {31} in copy a_8.
+A trace has been found.
+RESULT event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is false.
+-- Query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3))
+goal reachable: attacker(p) && attacker(hq_2) && attacker(pkin_1) && attacker(mid_1) && attacker(ts_3) && attacker(k) -> inj-event(RSUGreen(idA[],(mid_1,ts_3,ambulance)),@occ42_1)
+Abbreviations:
+@occ42_1 = @occ42[pkc = ppk(k),psig = psign((mid_1,ts_3,ambulance),k),pkin = pkin_1,hq = hq_2,pu_2 = p,id_2 = idA[],esig = esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),m_2 = (mid_1,ts_3,ambulance),tag_2 = short,!1 = @sid]
+
+Derivation:
+Abbreviations:
+@occ42_1 = @occ42[pkc = ppk(k),psig = psign((mid_1,ts_3,ambulance),k),pkin = pkin_1,hq = hq_2,pu_2 = p,id_2 = idA[],esig = esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),m_2 = (mid_1,ts_3,ambulance),tag_2 = short,!1 = @sid]
+
+1. We assume as hypothesis that
+attacker(k).
+
+2. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+3. We assume as hypothesis that
+attacker(ts_3).
+
+4. We assume as hypothesis that
+attacker(mid_1).
+
+5. By 4, the attacker may know mid_1.
+By 3, the attacker may know ts_3.
+By 2, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_1,ts_3,ambulance).
+attacker((mid_1,ts_3,ambulance)).
+
+6. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 1, the attacker may know k.
+Using the function psign the attacker may obtain psign((mid_1,ts_3,ambulance),k).
+attacker(psign((mid_1,ts_3,ambulance),k)).
+
+7. We assume as hypothesis that
+attacker(pkin_1).
+
+8. We assume as hypothesis that
+attacker(hq_2).
+
+9. We assume as hypothesis that
+attacker(p).
+
+10. The attacker initially knows idA[].
+attacker(idA[]).
+
+11. By 10, the attacker may know idA[].
+By 8, the attacker may know hq_2.
+By 9, the attacker may know p.
+Using the function 3-tuple the attacker may obtain (idA[],hq_2,p).
+attacker((idA[],hq_2,p)).
+
+12. The message (idA[],hq_2,p) that the attacker may have by 11 may be received at input {57}.
+So the message ecqvSK(skCA[],idA[],hq_2,p) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],idA[],hq_2,p)).
+
+13. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 12, the attacker may know ecqvSK(skCA[],idA[],hq_2,p).
+Using the function esign the attacker may obtain esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)).
+attacker(esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p))).
+
+14. Using the function short the attacker may obtain short.
+attacker(short).
+
+15. By 14, the attacker may know short.
+By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 13, the attacker may know esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)).
+By 10, the attacker may know idA[].
+By 9, the attacker may know p.
+By 8, the attacker may know hq_2.
+By 7, the attacker may know pkin_1.
+By 6, the attacker may know psign((mid_1,ts_3,ambulance),k).
+Using the function 8-tuple the attacker may obtain (short,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psign((mid_1,ts_3,ambulance),k)).
+attacker((short,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psign((mid_1,ts_3,ambulance),k))).
+
+16. The attacker has some term ts_4.
+attacker(ts_4).
+
+17. The attacker has some term mid_2.
+attacker(mid_2).
+
+18. By 17, the attacker may know mid_2.
+By 16, the attacker may know ts_4.
+By 2, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_2,ts_4,ambulance).
+attacker((mid_2,ts_4,ambulance)).
+
+19. By 18, the attacker may know (mid_2,ts_4,ambulance).
+By 1, the attacker may know k.
+Using the function psign the attacker may obtain psign((mid_2,ts_4,ambulance),k).
+attacker(psign((mid_2,ts_4,ambulance),k)).
+
+20. By 1, the attacker may know k.
+Using the function ppk the attacker may obtain ppk(k).
+attacker(ppk(k)).
+
+21. By 20, the attacker may know ppk(k).
+Using the function h the attacker may obtain h(ppk(k)).
+attacker(h(ppk(k))).
+
+22. The attacker has some term p_1.
+attacker(p_1).
+
+23. By 10, the attacker may know idA[].
+By 21, the attacker may know h(ppk(k)).
+By 22, the attacker may know p_1.
+Using the function 3-tuple the attacker may obtain (idA[],h(ppk(k)),p_1).
+attacker((idA[],h(ppk(k)),p_1)).
+
+24. The message (idA[],h(ppk(k)),p_1) that the attacker may have by 23 may be received at input {57}.
+So the message ecqvSK(skCA[],idA[],h(ppk(k)),p_1) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],idA[],h(ppk(k)),p_1)).
+
+25. By 18, the attacker may know (mid_2,ts_4,ambulance).
+By 24, the attacker may know ecqvSK(skCA[],idA[],h(ppk(k)),p_1).
+Using the function esign the attacker may obtain esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1)).
+attacker(esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1))).
+
+26. Using the function full the attacker may obtain full.
+attacker(full).
+
+27. By 26, the attacker may know full.
+By 18, the attacker may know (mid_2,ts_4,ambulance).
+By 25, the attacker may know esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1)).
+By 10, the attacker may know idA[].
+By 22, the attacker may know p_1.
+By 21, the attacker may know h(ppk(k)).
+By 20, the attacker may know ppk(k).
+By 19, the attacker may know psign((mid_2,ts_4,ambulance),k).
+Using the function 8-tuple the attacker may obtain (full,(mid_2,ts_4,ambulance),esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1)),idA[],p_1,h(ppk(k)),ppk(k),psign((mid_2,ts_4,ambulance),k)).
+attacker((full,(mid_2,ts_4,ambulance),esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1)),idA[],p_1,h(ppk(k)),ppk(k),psign((mid_2,ts_4,ambulance),k))).
+
+28. The message (full,(mid_2,ts_4,ambulance),esign((mid_2,ts_4,ambulance),ecqvSK(skCA[],idA[],h(ppk(k)),p_1)),idA[],p_1,h(ppk(k)),ppk(k),psign((mid_2,ts_4,ambulance),k)) that the attacker may have by 27 may be received at input {27}.
+So the entry pkCache(idA[],ppk(k)) may be inserted in a table at insert {35}.
+table(pkCache(idA[],ppk(k))).
+
+29. The message (short,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],hq_2,p)),idA[],p,hq_2,pkin_1,psign((mid_1,ts_3,ambulance),k)) that the attacker may have by 15 may be received at input {27}.
+The entry pkCache(idA[],ppk(k)) that may be in a table by 28 may be read at get {47}.
+So event RSUGreen(idA[],(mid_1,ts_3,ambulance)) may be executed at {42} in session @sid.
+inj-event(RSUGreen(idA[],(mid_1,ts_3,ambulance)),@occ42_1).
+
+30. By 29, inj-event(RSUGreen(idA[],(mid_1,ts_3,ambulance)),@occ42_1).
+The goal is reached, represented in the following fact:
+inj-event(RSUGreen(idA[],(mid_1,ts_3,ambulance)),@occ42_1).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (idA,h(ppk(a)),a_1)) at {57} in copy a_2
+
+out(c, ~M_1) with ~M_1 = ecqvSK(skCA,idA,h(ppk(a)),a_1) at {58} in copy a_2
+
+in(c, (full,(a_3,a_4,ambulance),esign((a_3,a_4,ambulance),~M_1),idA,a_1,h(ppk(a)),ppk(a),psign((a_3,a_4,ambulance),a))) with esign((a_3,a_4,ambulance),~M_1) = esign((a_3,a_4,ambulance),ecqvSK(skCA,idA,h(ppk(a)),a_1)) at {27} in copy a_5
+
+event RSUYellow(idA,(a_3,a_4,ambulance)) at {31} in copy a_5
+
+insert pkCache(idA,ppk(a)) at {35} in copy a_5
+
+event RSUGreen(idA,(a_3,a_4,ambulance)) at {36} in copy a_5
+
+event RSUSentSSM(idA,granted) at {37} in copy a_5
+
+out(c, (~M_2,~M_3)) with ~M_2 = idA, ~M_3 = granted at {38} in copy a_5
+
+in(c, (idA,a_6,a_7)) at {57} in copy a_8
+
+out(c, ~M_4) with ~M_4 = ecqvSK(skCA,idA,a_6,a_7) at {58} in copy a_8
+
+in(c, (short,(a_9,a_10,ambulance),esign((a_9,a_10,ambulance),~M_4),idA,a_7,a_6,a_11,psign((a_9,a_10,ambulance),a))) with esign((a_9,a_10,ambulance),~M_4) = esign((a_9,a_10,ambulance),ecqvSK(skCA,idA,a_6,a_7)) at {27} in copy a_12
+
+event RSUYellow(idA,(a_9,a_10,ambulance)) at {31} in copy a_12
+
+get pkCache(idA,ppk(a)) at {47} in copy a_12
+
+event RSUGreen(idA,(a_9,a_10,ambulance)) at {42} in copy a_12 (goal)
+
+The event RSUGreen(idA,(a_9,a_10,ambulance)) is executed at {42} in copy a_12.
+A trace has been found.
+RESULT inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) is false.
+RESULT (even event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is false.)
+-- Query not attacker(pskA[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query not attacker(pskA[])
+RESULT not attacker(pskA[]) is true.
+-- Query not attacker(skCA[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query not attacker(skCA[])
+RESULT not attacker(skCA[]) is true.
+-- Query not event(Blacklist(idA[])) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query not event(Blacklist(idA[]))
+goal reachable: event(Blacklist(idA[]))
+
+Derivation:
+
+1. The attacker has some term psig_1.
+attacker(psig_1).
+
+2. The attacker has some term pkin_1.
+attacker(pkin_1).
+
+3. By 2, the attacker may know pkin_1.
+Using the function h the attacker may obtain h(pkin_1).
+attacker(h(pkin_1)).
+
+4. The attacker has some term p.
+attacker(p).
+
+5. The attacker initially knows idA[].
+attacker(idA[]).
+
+6. By 5, the attacker may know idA[].
+By 3, the attacker may know h(pkin_1).
+By 4, the attacker may know p.
+Using the function 3-tuple the attacker may obtain (idA[],h(pkin_1),p).
+attacker((idA[],h(pkin_1),p)).
+
+7. The message (idA[],h(pkin_1),p) that the attacker may have by 6 may be received at input {57}.
+So the message ecqvSK(skCA[],idA[],h(pkin_1),p) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],idA[],h(pkin_1),p)).
+
+8. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+9. The attacker has some term ts_3.
+attacker(ts_3).
+
+10. The attacker has some term mid_1.
+attacker(mid_1).
+
+11. By 10, the attacker may know mid_1.
+By 9, the attacker may know ts_3.
+By 8, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_1,ts_3,ambulance).
+attacker((mid_1,ts_3,ambulance)).
+
+12. By 11, the attacker may know (mid_1,ts_3,ambulance).
+By 7, the attacker may know ecqvSK(skCA[],idA[],h(pkin_1),p).
+Using the function esign the attacker may obtain esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p)).
+attacker(esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p))).
+
+13. Using the function full the attacker may obtain full.
+attacker(full).
+
+14. By 13, the attacker may know full.
+By 11, the attacker may know (mid_1,ts_3,ambulance).
+By 12, the attacker may know esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p)).
+By 5, the attacker may know idA[].
+By 4, the attacker may know p.
+By 3, the attacker may know h(pkin_1).
+By 2, the attacker may know pkin_1.
+By 1, the attacker may know psig_1.
+Using the function 8-tuple the attacker may obtain (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p)),idA[],p,h(pkin_1),pkin_1,psig_1).
+attacker((full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p)),idA[],p,h(pkin_1),pkin_1,psig_1)).
+
+15. The message (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],idA[],h(pkin_1),p)),idA[],p,h(pkin_1),pkin_1,psig_1) that the attacker may have by 14 may be received at input {27}.
+We have (forall @gen, (pkin_1 ≠ ppk(@gen) | psig_1 ≠ psign((mid_1,ts_3,ambulance),@gen))).
+So event Blacklist(idA[]) may be executed at {39}.
+event(Blacklist(idA[])).
+
+16. By 15, event(Blacklist(idA[])).
+The goal is reached, represented in the following fact:
+event(Blacklist(idA[])).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (idA,h(a),a_1)) at {57} in copy a_2
+
+out(c, ~M_1) with ~M_1 = ecqvSK(skCA,idA,h(a),a_1) at {58} in copy a_2
+
+in(c, (full,(a_3,a_4,ambulance),esign((a_3,a_4,ambulance),~M_1),idA,a_1,h(a),a,a_5)) with esign((a_3,a_4,ambulance),~M_1) = esign((a_3,a_4,ambulance),ecqvSK(skCA,idA,h(a),a_1)) at {27} in copy a_6
+
+event RSUYellow(idA,(a_3,a_4,ambulance)) at {31} in copy a_6
+
+event Blacklist(idA) at {39} in copy a_6 (goal)
+
+The event Blacklist(idA) is executed at {39} in copy a_6.
+A trace has been found.
+RESULT not event(Blacklist(idA[])) is false.
+-- Query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2))
+goal reachable: attacker(i_2) && attacker(mid_1) && attacker(ts_3) && b-event(EmergencyEnrolled(idA[])) -> event(RSUGreen(i_2,(mid_1,ts_3,ambulance)))
+
+Derivation:
+
+1. The attacker has some term k.
+attacker(k).
+
+2. Using the function ambulance the attacker may obtain ambulance.
+attacker(ambulance).
+
+3. We assume as hypothesis that
+attacker(ts_3).
+
+4. We assume as hypothesis that
+attacker(mid_1).
+
+5. By 4, the attacker may know mid_1.
+By 3, the attacker may know ts_3.
+By 2, the attacker may know ambulance.
+Using the function 3-tuple the attacker may obtain (mid_1,ts_3,ambulance).
+attacker((mid_1,ts_3,ambulance)).
+
+6. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 1, the attacker may know k.
+Using the function psign the attacker may obtain psign((mid_1,ts_3,ambulance),k).
+attacker(psign((mid_1,ts_3,ambulance),k)).
+
+7. By 1, the attacker may know k.
+Using the function ppk the attacker may obtain ppk(k).
+attacker(ppk(k)).
+
+8. By 7, the attacker may know ppk(k).
+Using the function h the attacker may obtain h(ppk(k)).
+attacker(h(ppk(k))).
+
+9. The attacker has some term p.
+attacker(p).
+
+10. We assume as hypothesis that
+attacker(i_2).
+
+11. By 10, the attacker may know i_2.
+By 8, the attacker may know h(ppk(k)).
+By 9, the attacker may know p.
+Using the function 3-tuple the attacker may obtain (i_2,h(ppk(k)),p).
+attacker((i_2,h(ppk(k)),p)).
+
+12. The event EmergencyEnrolled(idA[]) may be executed at {5}.
+The message (i_2,h(ppk(k)),p) that the attacker may have by 11 may be received at input {57}.
+So the message ecqvSK(skCA[],i_2,h(ppk(k)),p) may be sent to the attacker at output {58}.
+attacker(ecqvSK(skCA[],i_2,h(ppk(k)),p)).
+
+13. By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 12, the attacker may know ecqvSK(skCA[],i_2,h(ppk(k)),p).
+Using the function esign the attacker may obtain esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p)).
+attacker(esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p))).
+
+14. Using the function full the attacker may obtain full.
+attacker(full).
+
+15. By 14, the attacker may know full.
+By 5, the attacker may know (mid_1,ts_3,ambulance).
+By 13, the attacker may know esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p)).
+By 10, the attacker may know i_2.
+By 9, the attacker may know p.
+By 8, the attacker may know h(ppk(k)).
+By 7, the attacker may know ppk(k).
+By 6, the attacker may know psign((mid_1,ts_3,ambulance),k).
+Using the function 8-tuple the attacker may obtain (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p)),i_2,p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k)).
+attacker((full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p)),i_2,p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k))).
+
+16. The event EmergencyEnrolled(idA[]) may be executed at {5}.
+The message (full,(mid_1,ts_3,ambulance),esign((mid_1,ts_3,ambulance),ecqvSK(skCA[],i_2,h(ppk(k)),p)),i_2,p,h(ppk(k)),ppk(k),psign((mid_1,ts_3,ambulance),k)) that the attacker may have by 15 may be received at input {27}.
+So event RSUGreen(i_2,(mid_1,ts_3,ambulance)) may be executed at {36}.
+event(RSUGreen(i_2,(mid_1,ts_3,ambulance))).
+
+17. By 16, event(RSUGreen(i_2,(mid_1,ts_3,ambulance))).
+The goal is reached, represented in the following fact:
+event(RSUGreen(i_2,(mid_1,ts_3,ambulance))).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (a,h(ppk(a_1)),a_2)) at {57} in copy a_3
+
+out(c, ~M_1) with ~M_1 = ecqvSK(skCA,a,h(ppk(a_1)),a_2) at {58} in copy a_3
+
+in(c, (full,(a_4,a_5,ambulance),esign((a_4,a_5,ambulance),~M_1),a,a_2,h(ppk(a_1)),ppk(a_1),psign((a_4,a_5,ambulance),a_1))) with esign((a_4,a_5,ambulance),~M_1) = esign((a_4,a_5,ambulance),ecqvSK(skCA,a,h(ppk(a_1)),a_2)) at {27} in copy a_6
+
+event RSUYellow(a,(a_4,a_5,ambulance)) at {31} in copy a_6
+
+insert pkCache(a,ppk(a_1)) at {35} in copy a_6
+
+event RSUGreen(a,(a_4,a_5,ambulance)) at {36} in copy a_6 (goal)
+
+The event RSUGreen(a,(a_4,a_5,ambulance)) is executed at {36} in copy a_6.
+A trace has been found.
+RESULT event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) is false.
+-- Query event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+Starting query event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1))
+goal reachable: attacker(i_2) && attacker(st_1) -> event(OBUAcceptSSM(i_2,st_1))
+
+Derivation:
+
+1. We assume as hypothesis that
+attacker(st_1).
+
+2. We assume as hypothesis that
+attacker(i_2).
+
+3. By 2, the attacker may know i_2.
+By 1, the attacker may know st_1.
+Using the function 2-tuple the attacker may obtain (i_2,st_1).
+attacker((i_2,st_1)).
+
+4. The message (i_2,st_1) that the attacker may have by 3 may be received at input {54}.
+So event OBUAcceptSSM(i_2,st_1) may be executed at {55}.
+event(OBUAcceptSSM(i_2,st_1)).
+
+5. By 4, event(OBUAcceptSSM(i_2,st_1)).
+The goal is reached, represented in the following fact:
+event(OBUAcceptSSM(i_2,st_1)).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+out(c, ~M) with ~M = eccpk(skCA) at {2}
+
+event EmergencyEnrolled(idA) at {5}
+
+insert pkCache(idA,ppk(pskA)) at {6}
+
+in(c, (a,a_1)) at {54} in copy a_2
+
+event OBUAcceptSSM(a,a_1) at {55} in copy a_2 (goal)
+
+The event OBUAcceptSSM(a,a_1) is executed at {55} in copy a_2.
+A trace has been found.
+RESULT event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1)) is false.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query event(RSUGreen(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is false.
+
+Query event(RSUYellow(idA[],m_3)) ==> event(OBUSent(idA[],m_3)) is false.
+
+Query inj-event(RSUGreen(idA[],m_3)) ==> inj-event(OBUSent(idA[],m_3)) is false.
+
+Query not attacker(pskA[]) is true.
+
+Query not attacker(skCA[]) is true.
+
+Query not event(Blacklist(idA[])) is false.
+
+Query event(RSUGreen(i_2,m_3)) ==> event(EmergencyEnrolled(i_2)) is false.
+
+Query event(OBUAcceptSSM(i_2,st_1)) ==> event(RSUSentSSM(i_2,st_1)) is false.
+
+--------------------------------------------------------------
+

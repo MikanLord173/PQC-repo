@@ -67,7 +67,7 @@ def run_test():
     full_packet = gen_packet(obu_test_id, known_RSU=False)
     frags_full = make_fragments(full_packet, msg_id=201)
     print(f"  -> Full 模式 SRM 封包總體積 = {len(full_packet)} Bytes, 切為 {len(frags_full)} 片")
-    assert len(frags_full) == 3, f"Full 模式應精準切為 3 片，目前為 {len(frags_full)} 片"
+    assert len(frags_full) == 5, f"Full 模式 (含 CA 後量子憑證) 應切為 5 片，目前為 {len(frags_full)} 片"
 
     # 模擬 Mock Socket 收集 RSU 送出的 SSM 回條
     class MockSocket:

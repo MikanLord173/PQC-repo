@@ -3,7 +3,9 @@ import struct, math, hashlib
 # ─── XOR 協定常數（OBU/RSU 共用） ─────────────────────────────────────────────
 XOR_MODE_FLAG  = 0x80   # total_frags byte 高位元：標識 XOR 模式
 PARITY_SEQ     = 0      # seq_num = 0 專屬修復分片 FP
-F1_MAX_XOR_UDP = 650    # F1 UDP 封包上限（約 600B，實際約 576~608B）
+F1_MAX_XOR_UDP = 720    # F1 UDP 封包上限（Short 約 606~610B，Full 約 703~706B）
+#   【安全修正】F1 新增 role (1B) 與 H(sig_PQC) (32B)；Full 封包多夾帶 2420B CA 後量子憑證，重量分片 3→5 片
+#   (雜湊承諾 +64B)。Full 的 F1 由約 608B 增為約 706B，上限由 650B 調為 720B。
 #   設計理由：封包掉包率與封包長度成指數正比；
 #   F1 攜帶 ECQV 輕量認證資料（SRM + ECC + ECQV，約 500~600B），保持短小以極大化空中存活率。
 #   F2..FN 承載 PQC 簽章 / 公鑰等重量資料，由 XOR 修復分片 FP 覆蓋保護。
@@ -27,7 +29,8 @@ def _pad(block: bytes, length: int) -> bytes:
 def get_auth_len(packet: bytes) -> int:
     """
     計算 F1 輕量認證層所需的完整長度：
-    msg_len (2B) | message (msg_len B) | ecc_sig_len (1B) | ecc_sig | ID (8B) | P_U (33B) | pqc_pub_hash (32B)
+    msg_len (2B) | message (msg_len B) | ecc_sig_len (1B) | ecc_sig |
+    ID (8B) | role (1B) | P_U (33B) | pqc_pub_hash (32B) | pqc_sig_hash (32B)
     確保 F1 完整涵蓋 ECQV 輕量驗證所需的所有欄位，避免截斷 pqc_pub_hash 造成簽章校驗失敗。
     """
     if len(packet) < 2:
@@ -37,7 +40,7 @@ def get_auth_len(packet: bytes) -> int:
     if len(packet) < ecc_offset + 1:
         return len(packet)
     ecc_sig_len = struct.unpack('!B', packet[ecc_offset : ecc_offset + 1])[0]
-    auth_len = 2 + msg_len + 1 + ecc_sig_len + 8 + 33 + 32
+    auth_len = 2 + msg_len + 1 + ecc_sig_len + 8 + 1 + 33 + 32 + 32
     return min(auth_len, len(packet))
 
 
@@ -54,7 +57,7 @@ def _xor_layout(packet_or_len):
         f1_raw_size = get_auth_len(packet_or_len)
     else:
         total_len   = int(packet_or_len)
-        f1_raw_size = min(507, total_len)
+        f1_raw_size = min(540, total_len)   # 507B + role (1B) + H(sig_PQC) (32B)
 
     heavy_total = total_len - f1_raw_size
     if heavy_total <= 0:
