@@ -1,8 +1,8 @@
 {
   "command": "python3 -m sim.trip_sim",
-  "git_commit": "30a5ba7",
-  "run_at": "2026-10-23 (補記：此檔於實驗後依相同預設參數產生)",
-  "elapsed_s": 103.9,
+  "git_commit": "86e284f-dirty",
+  "run_at": "2026-10-28 23:28:13",
+  "elapsed_s": 114.7,
   "distance": 300.0,
   "speed": 60.0,
   "interval": 1.0,

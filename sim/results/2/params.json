@@ -1,7 +1,7 @@
 {
   "command": "python3 -m sim.bench_compute --iterations 1000",
-  "git_commit": "86e82ad",
-  "run_at": "2026-10-23 17:19:09",
+  "git_commit": "86e284f-dirty",
+  "run_at": "2026-10-28 23:25:58",
   "elapsed_s": 50.4,
   "iterations": 1000,
   "warmup": 20,
@@ -12,7 +12,7 @@
   "machine": "arm64",
   "processor": "arm",
   "liboqs_python": "",
-  "liboqs": "0.14.0",
+  "liboqs": "0.16.0",
   "ecdsa": "0.19.2",
   "cryptography": "50.0.1"
 }

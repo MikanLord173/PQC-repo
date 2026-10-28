@@ -155,7 +155,7 @@ RSU 驗證順序（[`parse.py`](../RSU/parse.py)）：ECC 簽章與角色 → H(
 | mid 掉包環境 Full 平均綠燈觸發時間（none / dup / xor） | 3.10 / 2.24 / 1.39 s | 5.15 / 4.34 / 2.57 s | 同上 |
 | mid 掉包環境 Short 一次成功率（none / dup / xor） | 32.8 / 46.2 / 55.1 % | 32.7 / 45.9 / 54.0 % | Short 幾乎不變 |
 
-耗時：修正前 `sim/results/2`（liboqs 0.14），修正後 `sim/results/4`（liboqs 0.16），皆 1000 次。行車模擬：修正前 `sim/results/1`、`3`，修正後 `sim/results/5`、`6`，皆 1000 趟、種子 42，運算耗時常數不變，差異只來自封包格式。模擬沒有計入 RSU 簽 SSM 的約 0.5 ms。
+耗時：修正前 `sim/results/2_old`（liboqs 0.14），修正後 `sim/results/2`（liboqs 0.16），皆 1000 次。行車模擬：修正前 `sim/results/1_old`、`3_old`，修正後 `sim/results/1`、`3`，皆 1000 趟、種子 42，運算耗時常數不變，差異只來自封包格式。模擬沒有計入 RSU 簽 SSM 的約 0.5 ms。
 
 F-5 的代價集中在**首次建聯的 Full 封包**；建聯後的 Short 封包、以及經有線骨幹預熱的下游路口都不受影響，這也讓 Short 模式的節省效果更明顯。
 
