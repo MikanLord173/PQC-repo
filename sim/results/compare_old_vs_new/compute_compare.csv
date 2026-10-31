@@ -1,0 +1,157 @@
+﻿項目代碼,項目說明,分類,指標,舊版,新版,差值,變化幅度(%)
+ca_enroll,"CA ca_process_enrollment total (P_U, e, r; includes CA key file load)",requested,平均(ms),0.739449,0.775274,0.035825,4.8
+ca_enroll,"CA ca_process_enrollment total (P_U, e, r; includes CA key file load)",requested,中位數(ms),0.696750,0.765541,0.068791,9.9
+ca_enroll,"CA ca_process_enrollment total (P_U, e, r; includes CA key file load)",requested,P95(ms),0.812542,0.877083,0.064541,7.9
+ca_enroll_load_priv_key,breakdown: read + parse CA ECC private key from disk (every enroll call),overlooked,平均(ms),0.051016,0.049832,-0.001184,-2.3
+ca_enroll_load_priv_key,breakdown: read + parse CA ECC private key from disk (every enroll call),overlooked,中位數(ms),0.045667,0.041125,-0.004542,-9.9
+ca_enroll_load_priv_key,breakdown: read + parse CA ECC private key from disk (every enroll call),overlooked,P95(ms),0.071291,0.052500,-0.018791,-26.4
+ca_enroll_point_ops,breakdown: P_U = R_U + k_CA*G (decode + scalar mult + add + compress),overlooked,平均(ms),0.646563,0.637205,-0.009358,-1.4
+ca_enroll_point_ops,breakdown: P_U = R_U + k_CA*G (decode + scalar mult + add + compress),overlooked,中位數(ms),0.642916,0.633708,-0.009208,-1.4
+ca_enroll_point_ops,breakdown: P_U = R_U + k_CA*G (decode + scalar mult + add + compress),overlooked,P95(ms),0.702625,0.696750,-0.005875,-0.8
+obu_derive_d_u,OBU obu_derive_key: d_U = (e*k_U + r) mod n (incl. SHA-256 of 1312B PQC pub),requested,平均(ms),0.002361,0.002688,0.000327,13.9
+obu_derive_d_u,OBU obu_derive_key: d_U = (e*k_U + r) mod n (incl. SHA-256 of 1312B PQC pub),requested,中位數(ms),0.002209,0.002583,0.000374,16.9
+obu_derive_d_u,OBU obu_derive_key: d_U = (e*k_U + r) mod n (incl. SHA-256 of 1312B PQC pub),requested,P95(ms),0.003000,0.003167,0.000167,5.6
+obu_gen_request_r_u,"OBU generate_enrollment_request: k_U random, R_U = k_U*G",overlooked,平均(ms),0.483379,0.487335,0.003956,0.8
+obu_gen_request_r_u,"OBU generate_enrollment_request: k_U random, R_U = k_U*G",overlooked,中位數(ms),0.480917,0.484333,0.003416,0.7
+obu_gen_request_r_u,"OBU generate_enrollment_request: k_U random, R_U = k_U*G",overlooked,P95(ms),0.534666,0.541333,0.006667,1.2
+obu_signing_key_from_d_u,OBU SigningKey.from_secret_exponent(d_U) (setup step 5),overlooked,平均(ms),0.487549,0.444640,-0.042909,-8.8
+obu_signing_key_from_d_u,OBU SigningKey.from_secret_exponent(d_U) (setup step 5),overlooked,中位數(ms),0.480000,0.441875,-0.038125,-7.9
+obu_signing_key_from_d_u,OBU SigningKey.from_secret_exponent(d_U) (setup step 5),overlooked,P95(ms),0.538167,0.482125,-0.056042,-10.4
+obu_mldsa_keygen,"OBU ML-DSA-44 keypair generation (setup, one-time)",overlooked,平均(ms),0.048986,0.032104,-0.016882,-34.5
+obu_mldsa_keygen,"OBU ML-DSA-44 keypair generation (setup, one-time)",overlooked,中位數(ms),0.047833,0.031584,-0.016249,-34.0
+obu_mldsa_keygen,"OBU ML-DSA-44 keypair generation (setup, one-time)",overlooked,P95(ms),0.057583,0.035750,-0.021833,-37.9
+e_concat_prehashed_73B,memory copy: ID(8)+P_U(33)+H(pk)(32) = 73B,requested,平均(ms),0.000077,0.000075,-2e-06,-2.6
+e_concat_prehashed_73B,memory copy: ID(8)+P_U(33)+H(pk)(32) = 73B,requested,中位數(ms),0.000075,0.000073,-2e-06,-2.7
+e_concat_prehashed_73B,memory copy: ID(8)+P_U(33)+H(pk)(32) = 73B,requested,P95(ms),0.000090,0.000078,-1.2e-05,-13.3
+e_concat_direct_1353B,memory copy: ID(8)+P_U(33)+pk(1312) = 1353B,requested,平均(ms),0.000112,0.000109,-3e-06,-2.7
+e_concat_direct_1353B,memory copy: ID(8)+P_U(33)+pk(1312) = 1353B,requested,中位數(ms),0.000111,0.000109,-2e-06,-1.8
+e_concat_direct_1353B,memory copy: ID(8)+P_U(33)+pk(1312) = 1353B,requested,P95(ms),0.000117,0.000110,-7e-06,-6.0
+e_two_layer_rsu,e with H(pk) already in packet (RSU path): concat 73B + SHA-256 + mod n,requested,平均(ms),0.000549,0.000546,-3e-06,-0.5
+e_two_layer_rsu,e with H(pk) already in packet (RSU path): concat 73B + SHA-256 + mod n,requested,中位數(ms),0.000539,0.000530,-9e-06,-1.7
+e_two_layer_rsu,e with H(pk) already in packet (RSU path): concat 73B + SHA-256 + mod n,requested,P95(ms),0.000635,0.000631,-4e-06,-0.6
+e_two_layer_with_prehash,e incl. computing H(pk) (CA/OBU path): SHA-256(1312B) + concat 73B + SHA-256,requested,平均(ms),0.001340,0.001334,-6e-06,-0.4
+e_two_layer_with_prehash,e incl. computing H(pk) (CA/OBU path): SHA-256(1312B) + concat 73B + SHA-256,requested,中位數(ms),0.001326,0.001311,-1.5e-05,-1.1
+e_two_layer_with_prehash,e incl. computing H(pk) (CA/OBU path): SHA-256(1312B) + concat 73B + SHA-256,requested,P95(ms),0.001475,0.001470,-5e-06,-0.3
+e_direct_1312B,e without pre-hash: concat 1353B + SHA-256 + mod n,requested,平均(ms),0.001078,0.001054,-2.4e-05,-2.2
+e_direct_1312B,e without pre-hash: concat 1353B + SHA-256 + mod n,requested,中位數(ms),0.001062,0.001035,-2.7e-05,-2.5
+e_direct_1312B,e without pre-hash: concat 1353B + SHA-256 + mod n,requested,P95(ms),0.001168,0.001167,-1e-06,-0.1
+sha256_pqc_pub_1312B,SHA-256 of 1312B ML-DSA-44 public key alone,requested,平均(ms),0.000792,0.000796,4e-06,0.5
+sha256_pqc_pub_1312B,SHA-256 of 1312B ML-DSA-44 public key alone,requested,中位數(ms),0.000773,0.000781,8e-06,1.0
+sha256_pqc_pub_1312B,SHA-256 of 1312B ML-DSA-44 public key alone,requested,P95(ms),0.000878,0.000886,8e-06,0.9
+rsu_reconstruct_q_u,RSU parse.reconstruct_obu_pubkey total (includes CA pub key file load),requested,平均(ms),1.798412,1.784444,-0.013968,-0.8
+rsu_reconstruct_q_u,RSU parse.reconstruct_obu_pubkey total (includes CA pub key file load),requested,中位數(ms),1.782750,1.771958,-0.010792,-0.6
+rsu_reconstruct_q_u,RSU parse.reconstruct_obu_pubkey total (includes CA pub key file load),requested,P95(ms),1.895834,1.892500,-0.003334,-0.2
+rsu_reconstruct_load_ca_pub,breakdown: read + parse CA pub key from disk (every reconstruct call),overlooked,平均(ms),0.030322,0.029768,-0.000554,-1.8
+rsu_reconstruct_load_ca_pub,breakdown: read + parse CA pub key from disk (every reconstruct call),overlooked,中位數(ms),0.029709,0.029041,-0.000668,-2.2
+rsu_reconstruct_load_ca_pub,breakdown: read + parse CA pub key from disk (every reconstruct call),overlooked,P95(ms),0.033792,0.032458,-0.001334,-3.9
+rsu_reconstruct_point_math,breakdown: decode P_U + e*P_U + Q_CA,requested,平均(ms),1.705517,1.720696,0.015179,0.9
+rsu_reconstruct_point_math,breakdown: decode P_U + e*P_U + Q_CA,requested,中位數(ms),1.691458,1.694416,0.002958,0.2
+rsu_reconstruct_point_math,breakdown: decode P_U + e*P_U + Q_CA,requested,P95(ms),1.799792,1.829250,0.029458,1.6
+rsu_reconstruct_vk_from_point,breakdown: VerifyingKey.from_public_point(Q_U),overlooked,平均(ms),0.058927,0.064984,0.006057,10.3
+rsu_reconstruct_vk_from_point,breakdown: VerifyingKey.from_public_point(Q_U),overlooked,中位數(ms),0.057666,0.062875,0.005209,9.0
+rsu_reconstruct_vk_from_point,breakdown: VerifyingKey.from_public_point(Q_U),overlooked,P95(ms),0.067459,0.075916,0.008457,12.5
+rsu_ecdsa_verify,"Tier-1 ECDSA P-256 verify (vk.verify, SHA-256)",requested,平均(ms),2.055798,2.095853,0.040055,1.9
+rsu_ecdsa_verify,"Tier-1 ECDSA P-256 verify (vk.verify, SHA-256)",requested,中位數(ms),2.030334,1.992042,-0.038292,-1.9
+rsu_ecdsa_verify,"Tier-1 ECDSA P-256 verify (vk.verify, SHA-256)",requested,P95(ms),2.177209,2.141416,-0.035793,-1.6
+rsu_mldsa_verify,Tier-2 ML-DSA-44 verify only (reused oqs object),requested,平均(ms),0.050755,0.029295,-0.02146,-42.3
+rsu_mldsa_verify,Tier-2 ML-DSA-44 verify only (reused oqs object),requested,中位數(ms),0.050125,0.028667,-0.021458,-42.8
+rsu_mldsa_verify,Tier-2 ML-DSA-44 verify only (reused oqs object),requested,P95(ms),0.056125,0.033875,-0.02225,-39.6
+rsu_oqs_context_create,oqs.Signature('ML-DSA-44') construct + free (done per verify in parse_packet),overlooked,平均(ms),0.003364,0.003337,-2.7e-05,-0.8
+rsu_oqs_context_create,oqs.Signature('ML-DSA-44') construct + free (done per verify in parse_packet),overlooked,中位數(ms),0.003209,0.003209,0,0.0
+rsu_oqs_context_create,oqs.Signature('ML-DSA-44') construct + free (done per verify in parse_packet),overlooked,P95(ms),0.003333,0.003292,-4.1e-05,-1.2
+rsu_early_drop_fake_f2,RSU process_fragment(fake F2): rate limit + header + SHA-256 + compare + drop,requested,平均(ms),0.001976,0.002012,3.6e-05,1.8
+rsu_early_drop_fake_f2,RSU process_fragment(fake F2): rate limit + header + SHA-256 + compare + drop,requested,中位數(ms),0.001917,0.001959,4.2e-05,2.2
+rsu_early_drop_fake_f2,RSU process_fragment(fake F2): rate limit + header + SHA-256 + compare + drop,requested,P95(ms),0.002042,0.002083,4.1e-05,2.0
+rsu_early_drop_hash_core,core only: SHA-256(fake F2 chunk) != committed hash,requested,平均(ms),0.000795,0.000902,0.000107,13.5
+rsu_early_drop_hash_core,core only: SHA-256(fake F2 chunk) != committed hash,requested,中位數(ms),0.000755,0.000882,0.000127,16.8
+rsu_early_drop_hash_core,core only: SHA-256(fake F2 chunk) != committed hash,requested,P95(ms),0.000964,0.001013,4.9e-05,5.1
+obu_ecdsa_sign,OBU ECDSA P-256 sign (SHA-256),requested,平均(ms),0.491486,0.488995,-0.002491,-0.5
+obu_ecdsa_sign,OBU ECDSA P-256 sign (SHA-256),requested,中位數(ms),0.489208,0.486333,-0.002875,-0.6
+obu_ecdsa_sign,OBU ECDSA P-256 sign (SHA-256),requested,P95(ms),0.542208,0.547084,0.004876,0.9
+obu_mldsa_sign,OBU ML-DSA-44 sign only (reused oqs object),requested,平均(ms),0.190817,0.070558,-0.120259,-63.0
+obu_mldsa_sign,OBU ML-DSA-44 sign only (reused oqs object),requested,中位數(ms),0.149666,0.056666,-0.093,-62.1
+obu_mldsa_sign,OBU ML-DSA-44 sign only (reused oqs object),requested,P95(ms),0.444166,0.142625,-0.301541,-67.9
+obu_load_keys_per_packet,gen_packet reads ECC key + PQC key + cert from disk every packet,overlooked,平均(ms),0.561182,0.478865,-0.082317,-14.7
+obu_load_keys_per_packet,gen_packet reads ECC key + PQC key + cert from disk every packet,overlooked,中位數(ms),0.561041,0.470167,-0.090874,-16.2
+obu_load_keys_per_packet,gen_packet reads ECC key + PQC key + cert from disk every packet,overlooked,P95(ms),0.607583,0.515917,-0.091666,-15.1
+obu_srm_payload_json,generate SRM payload + json.dumps,overlooked,平均(ms),0.006042,0.005990,-5.2e-05,-0.9
+obu_srm_payload_json,generate SRM payload + json.dumps,overlooked,中位數(ms),0.005875,0.005834,-4.1e-05,-0.7
+obu_srm_payload_json,generate SRM payload + json.dumps,overlooked,P95(ms),0.006625,0.006250,-0.000375,-5.7
+obu_gen_packet_full,"OBU gen_packet total, Full (payload + 2 signatures + file I/O + packing)",overlooked,平均(ms),1.276780,1.091095,-0.185685,-14.5
+obu_gen_packet_full,"OBU gen_packet total, Full (payload + 2 signatures + file I/O + packing)",overlooked,中位數(ms),1.241209,1.064125,-0.177084,-14.3
+obu_gen_packet_full,"OBU gen_packet total, Full (payload + 2 signatures + file I/O + packing)",overlooked,P95(ms),1.541958,1.233792,-0.308166,-20.0
+obu_gen_packet_short,"OBU gen_packet total, Short",overlooked,平均(ms),1.329085,1.075389,-0.253696,-19.1
+obu_gen_packet_short,"OBU gen_packet total, Short",overlooked,中位數(ms),1.255875,1.065458,-0.190417,-15.2
+obu_gen_packet_short,"OBU gen_packet total, Short",overlooked,P95(ms),1.638000,1.173750,-0.46425,-28.3
+obu_make_fragments_full,OBU make_fragments (DUP/none) Full: split + SHA-256 commitments,overlooked,平均(ms),0.004426,0.006009,0.001583,35.8
+obu_make_fragments_full,OBU make_fragments (DUP/none) Full: split + SHA-256 commitments,overlooked,中位數(ms),0.004250,0.005917,0.001667,39.2
+obu_make_fragments_full,OBU make_fragments (DUP/none) Full: split + SHA-256 commitments,overlooked,P95(ms),0.005708,0.006083,0.000375,6.6
+obu_make_fragments_short,OBU make_fragments (DUP/none) Short,overlooked,平均(ms),0.003041,0.002979,-6.2e-05,-2.0
+obu_make_fragments_short,OBU make_fragments (DUP/none) Short,overlooked,中位數(ms),0.003000,0.002959,-4.1e-05,-1.4
+obu_make_fragments_short,OBU make_fragments (DUP/none) Short,overlooked,P95(ms),0.003083,0.003041,-4.2e-05,-1.4
+obu_make_fragments_xor_full,OBU make_fragments_xor Full: split + commitments + XOR parity (Python loop),overlooked,平均(ms),0.152749,0.258908,0.106159,69.5
+obu_make_fragments_xor_full,OBU make_fragments_xor Full: split + commitments + XOR parity (Python loop),overlooked,中位數(ms),0.150000,0.254333,0.104333,69.6
+obu_make_fragments_xor_full,OBU make_fragments_xor Full: split + commitments + XOR parity (Python loop),overlooked,P95(ms),0.168291,0.284291,0.116,68.9
+obu_make_fragments_xor_short,OBU make_fragments_xor Short,overlooked,平均(ms),0.100324,0.103020,0.002696,2.7
+obu_make_fragments_xor_short,OBU make_fragments_xor Short,overlooked,中位數(ms),0.097708,0.101250,0.003542,3.6
+obu_make_fragments_xor_short,OBU make_fragments_xor Short,overlooked,P95(ms),0.112500,0.116375,0.003875,3.4
+rsu_f1_verify_cold,"RSU verify_f1_ecc, cache miss: parse + 150ms check + ECQV reconstruct + ECDSA verify",requested,平均(ms),3.845772,3.817973,-0.027799,-0.7
+rsu_f1_verify_cold,"RSU verify_f1_ecc, cache miss: parse + 150ms check + ECQV reconstruct + ECDSA verify",requested,中位數(ms),3.833500,3.803458,-0.030042,-0.8
+rsu_f1_verify_cold,"RSU verify_f1_ecc, cache miss: parse + 150ms check + ECQV reconstruct + ECDSA verify",requested,P95(ms),3.975208,3.978333,0.003125,0.1
+rsu_f1_verify_hot,"RSU verify_f1_ecc, cache hit (backhaul prewarmed): parse + ECDSA verify",requested,平均(ms),2.124966,2.006308,-0.118658,-5.6
+rsu_f1_verify_hot,"RSU verify_f1_ecc, cache hit (backhaul prewarmed): parse + ECDSA verify",requested,中位數(ms),2.020958,1.993666,-0.027292,-1.4
+rsu_f1_verify_hot,"RSU verify_f1_ecc, cache hit (backhaul prewarmed): parse + ECDSA verify",requested,P95(ms),2.336041,2.118875,-0.217166,-9.3
+rsu_xor_recover_full,"RSU recover_xor_heavy, Full (3 heavy fragments, one missing)",requested,平均(ms),0.101502,0.200114,0.098612,97.2
+rsu_xor_recover_full,"RSU recover_xor_heavy, Full (3 heavy fragments, one missing)",requested,中位數(ms),0.099583,0.196750,0.097167,97.6
+rsu_xor_recover_full,"RSU recover_xor_heavy, Full (3 heavy fragments, one missing)",requested,P95(ms),0.114375,0.219041,0.104666,91.5
+rsu_xor_recover_short,"RSU recover_xor_heavy, Short (2 heavy fragments, one missing)",requested,平均(ms),0.050820,0.055439,0.004619,9.1
+rsu_xor_recover_short,"RSU recover_xor_heavy, Short (2 heavy fragments, one missing)",requested,中位數(ms),0.048375,0.052792,0.004417,9.1
+rsu_xor_recover_short,"RSU recover_xor_heavy, Short (2 heavy fragments, one missing)",requested,P95(ms),0.061334,0.066042,0.004708,7.7
+rsu_reassembly_full,"verify SHA-256 commitment of every F2..FN + join, Full (3 fragments)",requested,平均(ms),0.002442,0.004016,0.001574,64.5
+rsu_reassembly_full,"verify SHA-256 commitment of every F2..FN + join, Full (3 fragments)",requested,中位數(ms),0.002417,0.003750,0.001333,55.2
+rsu_reassembly_full,"verify SHA-256 commitment of every F2..FN + join, Full (3 fragments)",requested,P95(ms),0.002500,0.005167,0.002667,106.7
+rsu_reassembly_short,"verify SHA-256 commitment of every F2..FN + join, Short (2 fragments)",requested,平均(ms),0.001602,0.001579,-2.3e-05,-1.4
+rsu_reassembly_short,"verify SHA-256 commitment of every F2..FN + join, Short (2 fragments)",requested,中位數(ms),0.001584,0.001583,-1e-06,-0.1
+rsu_reassembly_short,"verify SHA-256 commitment of every F2..FN + join, Short (2 fragments)",requested,P95(ms),0.001667,0.001625,-4.2e-05,-2.5
+rsu_mldsa_verify_full,"ML-DSA-44 verify as in parse_packet, Full: pk sliced from packet (incl. oqs ctx)",requested,平均(ms),0.054955,0.032820,-0.022135,-40.3
+rsu_mldsa_verify_full,"ML-DSA-44 verify as in parse_packet, Full: pk sliced from packet (incl. oqs ctx)",requested,中位數(ms),0.053625,0.032167,-0.021458,-40.0
+rsu_mldsa_verify_full,"ML-DSA-44 verify as in parse_packet, Full: pk sliced from packet (incl. oqs ctx)",requested,P95(ms),0.059916,0.036250,-0.023666,-39.5
+rsu_mldsa_verify_short,"ML-DSA-44 verify as in parse_packet, Short: pk from cache lookup (incl. oqs ctx)",requested,平均(ms),0.054879,0.032930,-0.021949,-40.0
+rsu_mldsa_verify_short,"ML-DSA-44 verify as in parse_packet, Short: pk from cache lookup (incl. oqs ctx)",requested,中位數(ms),0.053625,0.032209,-0.021416,-39.9
+rsu_mldsa_verify_short,"ML-DSA-44 verify as in parse_packet, Short: pk from cache lookup (incl. oqs ctx)",requested,P95(ms),0.061292,0.037250,-0.024042,-39.2
+rsu_full_pk_hash_binding,Full only: SHA-256(1312B pk) == pqc_pub_hash check,requested,平均(ms),0.000821,0.000818,-3e-06,-0.4
+rsu_full_pk_hash_binding,Full only: SHA-256(1312B pk) == pqc_pub_hash check,requested,中位數(ms),0.000810,0.000796,-1.4e-05,-1.7
+rsu_full_pk_hash_binding,Full only: SHA-256(1312B pk) == pqc_pub_hash check,requested,P95(ms),0.000907,0.000915,8e-06,0.9
+rsu_short_cache_lookup,Short only: query_pqc_pub_cache,requested,平均(ms),0.000154,0.000152,-2e-06,-1.3
+rsu_short_cache_lookup,Short only: query_pqc_pub_cache,requested,中位數(ms),0.000150,0.000149,-1e-06,-0.7
+rsu_short_cache_lookup,Short only: query_pqc_pub_cache,requested,P95(ms),0.000178,0.000170,-8e-06,-4.5
+rsu_parse_packet_full,"RSU parse_packet total, Full (hash binding + ML-DSA + ECDSA + cache write)",requested,平均(ms),2.111735,2.101410,-0.010325,-0.5
+rsu_parse_packet_full,"RSU parse_packet total, Full (hash binding + ML-DSA + ECDSA + cache write)",requested,中位數(ms),2.021917,2.082416,0.060499,3.0
+rsu_parse_packet_full,"RSU parse_packet total, Full (hash binding + ML-DSA + ECDSA + cache write)",requested,P95(ms),2.201750,2.207958,0.006208,0.3
+rsu_parse_packet_short,"RSU parse_packet total, Short (cache lookup + ML-DSA + ECDSA)",requested,平均(ms),2.067130,2.044879,-0.022251,-1.1
+rsu_parse_packet_short,"RSU parse_packet total, Short (cache lookup + ML-DSA + ECDSA)",requested,中位數(ms),2.047292,2.029000,-0.018292,-0.9
+rsu_parse_packet_short,"RSU parse_packet total, Short (cache lookup + ML-DSA + ECDSA)",requested,P95(ms),2.186459,2.148209,-0.03825,-1.7
+rsu_ssm_generate_json,RSU generate_ssm_payload + json.dumps (green SSM),overlooked,平均(ms),0.005224,0.005089,-0.000135,-2.6
+rsu_ssm_generate_json,RSU generate_ssm_payload + json.dumps (green SSM),overlooked,中位數(ms),0.005125,0.005000,-0.000125,-2.4
+rsu_ssm_generate_json,RSU generate_ssm_payload + json.dumps (green SSM),overlooked,P95(ms),0.005375,0.005250,-0.000125,-2.3
+rsu_backhaul_prewarm,RSU trigger_inter_rsu_prewarm to downstream RSUs (2 and 3),overlooked,平均(ms),0.002185,0.003903,0.001718,78.6
+rsu_backhaul_prewarm,RSU trigger_inter_rsu_prewarm to downstream RSUs (2 and 3),overlooked,中位數(ms),0.002000,0.003833,0.001833,91.6
+rsu_backhaul_prewarm,RSU trigger_inter_rsu_prewarm to downstream RSUs (2 and 3),overlooked,P95(ms),0.002750,0.003917,0.001167,42.4
+rsu_message_e2e_full_cold,"RSU whole message to green SSM, Full, cold cache (all real code paths)",overlooked,平均(ms),6.010303,6.515783,0.50548,8.4
+rsu_message_e2e_full_cold,"RSU whole message to green SSM, Full, cold cache (all real code paths)",overlooked,中位數(ms),5.990083,6.490916,0.500833,8.4
+rsu_message_e2e_full_cold,"RSU whole message to green SSM, Full, cold cache (all real code paths)",overlooked,P95(ms),6.217833,6.702625,0.484792,7.8
+rsu_message_e2e_short_prewarmed,"RSU whole message to green SSM, Short, backhaul-prewarmed cache",overlooked,平均(ms),4.188168,4.650706,0.462538,11.0
+rsu_message_e2e_short_prewarmed,"RSU whole message to green SSM, Short, backhaul-prewarmed cache",overlooked,中位數(ms),4.144500,4.607875,0.463375,11.2
+rsu_message_e2e_short_prewarmed,"RSU whole message to green SSM, Short, backhaul-prewarmed cache",overlooked,P95(ms),4.499834,4.841917,0.342083,7.6
+rsu_message_e2e_xor_full_recover,"RSU whole message to green SSM, XOR Full with F2 lost + recovered",overlooked,平均(ms),6.099763,6.719765,0.620002,10.2
+rsu_message_e2e_xor_full_recover,"RSU whole message to green SSM, XOR Full with F2 lost + recovered",overlooked,中位數(ms),6.087292,6.708959,0.621667,10.2
+rsu_message_e2e_xor_full_recover,"RSU whole message to green SSM, XOR Full with F2 lost + recovered",overlooked,P95(ms),6.299125,6.904459,0.605334,9.6
+timer_overhead,perf_counter_ns call pair with empty op (measurement floor),overlooked,平均(ms),0.000099,0.000101,2e-06,2.0
+timer_overhead,perf_counter_ns call pair with empty op (measurement floor),overlooked,中位數(ms),0.000084,0.000084,0,0.0
+timer_overhead,perf_counter_ns call pair with empty op (measurement floor),overlooked,P95(ms),0.000125,0.000125,0,0.0
+ref_ecdsa_sign_openssl,reference only: P-256 ECDSA sign via OpenSSL (cryptography),reference,平均(ms),0.025437,0.025145,-0.000292,-1.1
+ref_ecdsa_sign_openssl,reference only: P-256 ECDSA sign via OpenSSL (cryptography),reference,中位數(ms),0.024792,0.024708,-8.4e-05,-0.3
+ref_ecdsa_sign_openssl,reference only: P-256 ECDSA sign via OpenSSL (cryptography),reference,P95(ms),0.027292,0.029042,0.00175,6.4
+ref_ecdsa_verify_openssl,reference only: P-256 ECDSA verify via OpenSSL (cryptography),reference,平均(ms),0.058949,0.058570,-0.000379,-0.6
+ref_ecdsa_verify_openssl,reference only: P-256 ECDSA verify via OpenSSL (cryptography),reference,中位數(ms),0.057917,0.057791,-0.000126,-0.2
+ref_ecdsa_verify_openssl,reference only: P-256 ECDSA verify via OpenSSL (cryptography),reference,P95(ms),0.065792,0.063791,-0.002001,-3.0

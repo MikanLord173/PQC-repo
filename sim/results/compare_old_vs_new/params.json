@@ -1,0 +1,37 @@
+{
+  "command": "python3 -m sim.compare_runs",
+  "git_commit": "5cfab1a",
+  "run_at": "2026-10-29 11:18:03",
+  "out": "sim/results/compare_old_vs_new",
+  "pairs": {
+    "trip": {
+      "old": "sim/results/1_old",
+      "new": "sim/results/1"
+    },
+    "compute": {
+      "old": "sim/results/2_old",
+      "new": "sim/results/2"
+    },
+    "poster": {
+      "old": "sim/results/3_old",
+      "new": "sim/results/3"
+    }
+  },
+  "source_commits": {
+    "1_old": "30a5ba7",
+    "1": "86e284f-dirty",
+    "2_old": "86e82ad",
+    "2": "86e284f-dirty",
+    "3_old": "86e82ad-dirty",
+    "3": "86e284f-dirty"
+  },
+  "liboqs": {
+    "old": "0.14.0",
+    "new": "0.16.0"
+  },
+  "notes": [
+    "新版 = 安全修正 F-1~F-7 後 (commit f627e72)；舊版 = 修正前",
+    "Full 封包加入 CA ML-DSA-44 憑證 (約 +2.4KB)，F1 加入角色與 H(sig_PQC)，SSM 加入 RSU 簽章與憑證",
+    "運算量測的差異同時包含程式修改與 liboqs 版本變更 (見 liboqs 欄位)"
+  ]
+}

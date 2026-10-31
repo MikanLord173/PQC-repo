@@ -1,0 +1,62 @@
+{
+  "command": "python3 -m sim.corridor_sim --out sim/results/5",
+  "git_commit": "5cfab1a-dirty",
+  "run_at": "2026-10-29 11:40:29",
+  "elapsed_s": 190.3,
+  "pqc_alg": "ML-DSA-44",
+  "distance": 300.0,
+  "speed": 60.0,
+  "interval": 1.0,
+  "ack_timeout": 0.3,
+  "trials": 500,
+  "seed": 42,
+  "envs": "none,mid,high",
+  "channels": "iid,ge",
+  "packets": "full,short",
+  "modes": "none,dup,xor",
+  "rate_mbps": 6.0,
+  "d_ref": 100.0,
+  "alpha": 2.0,
+  "rsu_offset": 10.0,
+  "ge_good_ms": 200.0,
+  "ge_bad_ms": 20.0,
+  "ge_beta": 100.0,
+  "jobs": 8,
+  "out": "sim/results/5",
+  "intersections": 4,
+  "first_distance": 300.0,
+  "spacing": "300,600,900",
+  "dwell": "0,30,60",
+  "mode": "dup",
+  "speed_mps": 16.666666666666668,
+  "loss_model": "iid",
+  "ber_ref": {
+    "none": 0.0,
+    "low": 1e-06,
+    "mid": 5e-06,
+    "high": 2e-05
+  },
+  "queue_ms": {
+    "none": 0.0,
+    "low": 0.2,
+    "mid": 0.5,
+    "high": 1.0
+  },
+  "costs_ms": {
+    "obu_gen": 1.2,
+    "f1_verify": 1.9,
+    "ecqv": 1.8,
+    "full_verify": 2.0
+  },
+  "calibrated": false,
+  "strategies": {
+    "independent": "各路口獨立驗證",
+    "prewarm_old": "骨幹預熱 (修正前 TTL)",
+    "prewarm": "骨幹預熱 (修正後 TTL)"
+  },
+  "topology": "1 -> [2, 3], 2 -> [3], 3 -> [4] (RSU.main.DOWNSTREAM_TOPOLOGY)",
+  "ttl_formulas": {
+    "prewarm_old": "300 / speed + 30 s；OBU 白名單固定 60 s",
+    "prewarm": "distance / speed * 2 + 30 s；OBU 依 SSM prewarm_ttl_s"
+  }
+}

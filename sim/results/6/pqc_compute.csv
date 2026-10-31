@@ -1,0 +1,9 @@
+﻿項目代碼,項目,ML-DSA-44 平均(ms),Falcon-512 平均(ms),差值(ms),變化幅度(%)
+obu_mldsa_sign,OBU 後量子簽章,0.069468,0.148988,0.07952,114.5
+rsu_mldsa_verify,RSU 後量子驗簽,0.029335,0.024443,-0.004892,-16.7
+obu_gen_packet_full,OBU 產生 Full 封包,1.12833,1.24585,0.117517,10.4
+obu_gen_packet_short,OBU 產生 Short 封包,1.19143,1.14871,-0.042722,-3.6
+rsu_parse_packet_full,RSU 解析 Full,2.06259,2.13399,0.0714,3.5
+rsu_parse_packet_short,RSU 解析 Short,2.05341,2.06153,0.00812,0.4
+rsu_message_e2e_full_cold,RSU 端到端 Full (冷),6.56755,6.54976,-0.017786,-0.3
+rsu_message_e2e_short_prewarmed,RSU 端到端 Short (預熱),4.65039,4.62668,-0.023704,-0.5

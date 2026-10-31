@@ -1,0 +1,65 @@
+{
+  "command": "python3 -m sim.pqc_compare --out sim/results/6",
+  "git_commit": "5cfab1a-dirty",
+  "run_at": "2026-10-29 11:43:56",
+  "elapsed_s": 206.0,
+  "algorithms": [
+    "ML-DSA-44",
+    "Falcon-512"
+  ],
+  "iterations": 1000,
+  "trials": 1000,
+  "envs": "none,mid,high",
+  "channel": "iid",
+  "trip_costs": "calibrated per algorithm (trip_sim --calibrate)",
+  "sizes": {
+    "ML-DSA-44": {
+      "alg": "ML-DSA-44",
+      "nist_level": 2,
+      "pk": 1312,
+      "sk": 2560,
+      "sig_max": 2420,
+      "ca_cert": 2420,
+      "full": {
+        "bytes_mean": 6697.4,
+        "bytes_max": 6699,
+        "frags": 5.0,
+        "frags_max": 5,
+        "frags_xor": 7.0
+      },
+      "short": {
+        "bytes_mean": 2963.3,
+        "bytes_max": 2965,
+        "frags": 3.0,
+        "frags_max": 3,
+        "frags_xor": 4.0
+      }
+    },
+    "Falcon-512": {
+      "alg": "Falcon-512",
+      "nist_level": 1,
+      "pk": 897,
+      "sk": 1281,
+      "sig_max": 752,
+      "ca_cert": 657,
+      "full": {
+        "bytes_mean": 2754.5,
+        "bytes_max": 2760,
+        "frags": 2.01,
+        "frags_max": 3,
+        "frags_xor": 4.0
+      },
+      "short": {
+        "bytes_mean": 1198.6,
+        "bytes_max": 1205,
+        "frags": 1.0,
+        "frags_max": 1,
+        "frags_xor": 4.0
+      }
+    }
+  },
+  "notes": [
+    "每個演算法在獨立暫存目錄重新佈建金鑰 (CA 根金鑰、CA 後量子憑證、車輛金鑰皆使用該演算法)",
+    "Falcon-512 為 NIST 安全等級 1，ML-DSA-44 為等級 2"
+  ]
+}

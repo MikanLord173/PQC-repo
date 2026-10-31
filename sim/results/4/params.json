@@ -1,0 +1,34 @@
+{
+  "command": "python3 -m sim.dos_exp --out sim/results/4",
+  "git_commit": "5cfab1a-dirty",
+  "run_at": "2026-10-29 11:37:18",
+  "elapsed_s": 13.1,
+  "messages": 20,
+  "seed": 42,
+  "baseline_timeout": 1.0,
+  "flood_rates": "0,100,500,2000,10000,20000",
+  "inject_k": "1,3",
+  "spoof_rates": "100,200",
+  "variants": {
+    "baseline": "傳統收齊才驗",
+    "ed_v1": "Early-Drop+LRU (修正前)",
+    "ed_v2": "Early-Drop+LRU (修正後)"
+  },
+  "pqc_alg": "ML-DSA-44",
+  "rsu_constants": {
+    "MAX_SESSIONS": 100,
+    "PRUNING_TIMEOUT_s": 0.08,
+    "IP_MAX_PACKETS_per_s": 50,
+    "IP_MAX_TRACKED": 1000
+  },
+  "channel": {
+    "rate_mbps": 6.0,
+    "max_1400B_frames_per_s": 483,
+    "max_12B_frames_per_s": 4570,
+    "loss": "none"
+  },
+  "notes": [
+    "攻擊封包速率超過單一 6 Mbps 通道上限的點代表多台攻擊裝置或多通道同時攻擊",
+    "ed_v1 以旗標模擬修正前策略 (淘汰最早會話、F1 前每序號 1 片、所有分片計入 IP 限流、每包掃描逾時)"
+  ]
+}
