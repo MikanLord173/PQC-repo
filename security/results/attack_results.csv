@@ -18,6 +18,11 @@ I5,DoS / framing,attacker floods invalid F1s claiming AMB-217 to get it blacklis
 R1,replay,replay captured legit message after 200 ms,150 ms freshness check on full_timestamp,defended,yes,flash=False green=False
 R2,replay,replay within 150 ms from another address while the legit session is in progress,per-vehicle session dedup by F1 timestamp,defended,yes,replay green=False; legit green=True
 R3,replay,replay within 150 ms from another address AFTER the legit session completed,"F-4: granted SRMs remembered by (obu_id, full_timestamp)",defended,yes,legit green=True; replay green=False
+R4,replay / wormhole,legit SRM addressed to intersection 2 relayed to RSU 1 within 150 ms,F-8: SRM target intersection must equal the receiving RSU,defended,yes,relayed flash=False green=False; legit green=True
+D1,DoS (crash),single forged fragment opens the session with a smaller total_frags before the legit F1,fragment count taken from authenticated F1; receive_data catches per-packet exceptions,defended,yes,no crash; legit green=True
+D2,DoS (memory / eviction),"after legit F1, attacker opens 150 fake sessions from spoofed IPs (pool cap 100)",100-slot pool evicts unauthenticated sessions first,defended,yes,pool=100; legit green=True
+D3,DoS (rate-limit abuse),attacker spoofs AMB-217's IP and sends 80 junk fragments between F1 and the tail,source-IP rate limit applies to F1 only,defended,yes,legit green after IP-spoof flood=True
+D4,DoS (pre-F1 overwrite),primary F1 lost; tail arrives first and attacker re-sends 3 forged copies of each tail fragment before the backup F1,"pre-F1 candidates per slot, first arrival always kept",defended,yes,legit green with backup F1=True
 S1,forged downlink,attacker sends unsigned / self-signed SSM status=6 to force Full fallback,F-6: OBU verifies RSU certificate (CA ECC) + SSM ECDSA signature,defended,yes,unsigned accepted=False; self-signed accepted=False
 S2,forged downlink,SSM genuinely signed by RSU 2 but claiming intersection 1 (status=4 + prewarm list),F-6: SSM intersection id must equal the RSU id in its certificate,defended,yes,cross-intersection SSM accepted=False
 S3,replay downlink,replay a genuine status=6 SSM captured more than 1 s earlier,F-6: OBU rejects SSM older than 1 s,defended,yes,fresh accepted=True; replay after 1.1s accepted=False

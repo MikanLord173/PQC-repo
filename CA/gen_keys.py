@@ -1,6 +1,7 @@
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
 import oqs
+import pki
 
 def generate_ca_root_keys():
     # 1. 產生 CA 的 ECC 金鑰 (Root)
@@ -8,13 +9,16 @@ def generate_ca_root_keys():
     ca_ecc_pub = ca_ecc_priv.public_key()
     
     # 2. 產生 CA 的 PQC 金鑰 (Root)
-    ca_pqc = oqs.Signature("ML-DSA-44")
+    ca_pqc = oqs.Signature(pki.pqc_alg())
     ca_pqc_pub = ca_pqc.generate_keypair()
     ca_pqc_priv = ca_pqc.export_secret_key()
     
     return ca_ecc_pub, ca_ecc_priv, ca_pqc_pub, ca_pqc_priv
 
-if __name__ == "__main__":
+def write_ca_root_keys():
+    """產生 CA 根金鑰並寫入 CA/keys/ (相對於目前工作目錄)。"""
+    import os
+    os.makedirs("CA/keys", exist_ok=True)
     ca_ecc_pub, ca_ecc_priv, ca_pqc_pub, ca_pqc_priv = generate_ca_root_keys()
 
     with open("CA/keys/ca_ecc_pub.key", "wb") as f:
@@ -36,4 +40,8 @@ if __name__ == "__main__":
     with open("CA/keys/ca_pqc_priv.key", "wb") as f:
         f.write(ca_pqc_priv)
 
-    print("已成功生成 CA 的 ECC 和 PQC 金鑰對！")
+    print(f"已成功生成 CA 的 ECC 和 PQC ({pki.pqc_alg()}) 金鑰對！")
+
+
+if __name__ == "__main__":
+    write_ca_root_keys()

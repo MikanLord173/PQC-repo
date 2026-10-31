@@ -19,11 +19,14 @@ def get_next_id():
     current_msg_id = (current_msg_id + 1) % 65536
     return current_msg_id
 
+KNOWN_RSU_TTL = 60.0   # 已放行路口的白名單有效期 (秒)；預熱路口改用 SSM 夾帶的 prewarm_ttl_s
+
 def check_intersection(intersection_id):
+    """saved_intersections[路口] = 白名單到期時間 (Unix 秒)。
+    【修正】原本記錄加入時間並固定 60 秒到期，與 RSU 預熱快取 TTL 不一致：RSU 先過期時 Short 封包會被回 status=6。"""
     inter_key = str(intersection_id)
     if inter_key in saved_intersections:
-        # 快取有效期為 60 秒 (符合緊急車輛通過下游綠波路廊之時間跨度)
-        if time.time() - saved_intersections[inter_key] < 60.0:
+        if time.time() < saved_intersections[inter_key]:
             return True
         else:
             del saved_intersections[inter_key]
@@ -92,12 +95,13 @@ def send_heartbeat(obu_id, frequency, target_intersection=1, mode="dup"):
                                 if st == 4: # 4 = granted
                                     if not is_known:
                                         print(f"【收到路口 {ack_inter_id} 之 SSM 綠燈核准回條】首次建聯放行！切換為 Short 模式。\n")
-                                    saved_intersections[str(ack_inter_id)] = time.time()
+                                    saved_intersections[str(ack_inter_id)] = time.time() + KNOWN_RSU_TTL
 
                                     # ─── 有線骨幹預熱授權清單批次更新 (免冷啟動) ───
                                     prewarmed = ack_json.get("prewarmed_rsus", [])
-                                    for next_rsu in prewarmed:
-                                        saved_intersections[str(next_rsu)] = time.time()
+                                    ttls = ack_json.get("prewarm_ttl_s") or [KNOWN_RSU_TTL] * len(prewarmed)
+                                    for next_rsu, ttl in zip(prewarmed, ttls):
+                                        saved_intersections[str(next_rsu)] = time.time() + float(ttl)
                                         print(f"  [有線預熱授權] 下游路口 {next_rsu} 已同步金鑰，一併納入白名單！")
                                     break
                                 elif st in (5, 6): # 5=rejected, 6=need_cert (Fallback)

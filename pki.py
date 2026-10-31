@@ -4,12 +4,28 @@ PKI 共用定義：CA / OBU / RSU 三方必須逐位元組一致的欄位與簽�
 【安全修正】集中定義以下項目 (見 security/THREAT_MODEL.md)：
   F-2  角色 (role) 綁進 ECQV 糾纏值 e 與 CA 後量子憑證，RSU 不再信任 SRM 自稱的角色
   F-3  CA 註冊請求以預先發放的註冊金鑰 (HMAC-SHA256) 驗證申請者
-  F-5  CA 以 ML-DSA-44 根金鑰簽署 (ID ‖ role ‖ P_U ‖ H(pk_PQC))，PQC 公鑰不再只靠 ECC 綁定
+  F-5  CA 以後量子根金鑰 (預設 ML-DSA-44) 簽署 (ID ‖ role ‖ P_U ‖ H(pk_PQC))，PQC 公鑰不再只靠 ECC 綁定
   F-6  RSU 以 CA 核發的 ECDSA 金鑰簽署下行 SSM
 """
-import base64, hashlib, hmac, json, struct
+import base64, hashlib, hmac, json, os, struct
 
 from ecdsa import NIST256p, VerifyingKey
+
+# ─── 後量子簽章演算法 ───────────────────────────────────────────────────────
+# 預設 ML-DSA-44 (NIST FIPS 204)；可用環境變數 PQC_SIG_ALG 切換為 Falcon-512 作為對照組。
+# CA 根金鑰、車輛金鑰與 CA 後量子憑證都使用同一演算法，切換後必須重新產生金鑰並重新註冊
+# (python3 -m CA.gen_keys → python3 -m RSU.setup → python3 -m CA.registry → python3 -m OBU.setup，
+#  或以 python3 -m sim.provision 在獨立工作目錄一次完成)。
+DEFAULT_PQC_ALG    = "ML-DSA-44"
+SUPPORTED_PQC_ALGS = ("ML-DSA-44", "Falcon-512", "Falcon-padded-512")
+
+
+def pqc_alg() -> str:
+    """目前使用的後量子簽章演算法 (每次呼叫時讀取，RSU/OBU 晚於 import 才載入 .env 也能生效)。"""
+    alg = os.getenv("PQC_SIG_ALG", DEFAULT_PQC_ALG)
+    if alg not in SUPPORTED_PQC_ALGS:
+        raise ValueError(f"不支援的 PQC_SIG_ALG={alg}，可用：{', '.join(SUPPORTED_PQC_ALGS)}")
+    return alg
 
 # ─── 角色 (SAE J2735 DE_BasicVehicleRole) ───────────────────────────────────
 ROLE_BASIC_VEHICLE = 0
@@ -32,7 +48,7 @@ def ecqv_e(obu_id_raw: bytes, role: int, P_U_bytes: bytes, pqc_pub_hash: bytes) 
 
 
 def ca_pqc_cert_tbs(obu_id_raw: bytes, role: int, P_U_bytes: bytes, pqc_pub_hash: bytes) -> bytes:
-    """CA ML-DSA-44 後量子憑證的簽署內容 (加上網域分隔字串，避免與其他簽章混用)。"""
+    """CA 後量子憑證的簽署內容 (加上網域分隔字串，避免與其他簽章混用)。"""
     return b"PQC-EV-CERT-v1" + ecqv_entangled_data(obu_id_raw, role, P_U_bytes, pqc_pub_hash)
 
 

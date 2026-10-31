@@ -38,7 +38,7 @@ OBU_ID     = "AMB-217"
 RSU_ID     = 1
 LEGIT_ADDR = ("10.0.0.2", 40000)
 ATK_ADDR   = ("10.6.6.6", 46666)
-PQC_ALG    = "ML-DSA-44"
+PQC_ALG    = pki.pqc_alg()
 curve, G, N = NIST256p, NIST256p.generator, NIST256p.order
 
 
@@ -106,8 +106,8 @@ def forge_ecqv_with_ca_key(obu_id, d_CA, role=pki.ROLE_AMBULANCE):
     return Identity(obu_id, role, SigningKey.from_secret_exponent(d_U, curve=NIST256p), P_U, pqc_pub, pqc_priv, b"")
 
 
-def srm_bytes(obu_id=OBU_ID, ts=None, **overrides):
-    payload = generate_srm_payload(obu_id, intersection_id=RSU_ID, sim_time=ts if ts is not None else time.time())
+def srm_bytes(obu_id=OBU_ID, ts=None, intersection_id=RSU_ID, **overrides):
+    payload = generate_srm_payload(obu_id, intersection_id=intersection_id, sim_time=ts if ts is not None else time.time())
     payload.update(overrides)
     return json.dumps(payload, separators=(',', ':')).encode()
 
@@ -424,6 +424,69 @@ def t_r3(legit, sock):
     first = deliver(frags, LEGIT_ADDR, sock)
     r = deliver(frags, ATK_ADDR, sock)
     return first["green"] and not r["green"], f"legit green={first['green']}; replay green={r['green']}", True
+
+
+@case("R4", "replay / wormhole", "legit SRM addressed to intersection 2 relayed to RSU 1 within 150 ms",
+      "F-8: SRM target intersection must equal the receiving RSU")
+def t_r4(legit, sock):
+    msg = srm_bytes(intersection_id=2)
+    r = deliver(make_fragments(honest_packet(legit, msg=msg), next_msg_id()), ATK_ADDR, sock)
+    f = legit_followup(legit, sock)
+    return not r["flash"] and not r["green"] and f["green"], \
+        f"relayed flash={r['flash']} green={r['green']}; legit green={f['green']}", True
+
+
+@case("D1", "DoS (crash)", "single forged fragment opens the session with a smaller total_frags before the legit F1",
+      "fragment count taken from authenticated F1; receive_data catches per-packet exceptions")
+def t_d1(legit, sock):
+    msg_id = next_msg_id()
+    frags = make_fragments(honest_packet(legit), msg_id)
+    try:
+        rsu.process_fragment(struct.pack('!BBH', 2, 2, msg_id) + os.urandom(40), LEGIT_ADDR, sock=sock, rsu_id=RSU_ID)
+        r = deliver(frags, LEGIT_ADDR, sock)
+    except Exception as e:
+        return False, f"RSU raised {type(e).__name__}: {e}", True
+    return r["green"], f"no crash; legit green={r['green']}", True
+
+
+@case("D2", "DoS (memory / eviction)", "after legit F1, attacker opens 150 fake sessions from spoofed IPs (pool cap 100)",
+      "100-slot pool evicts unauthenticated sessions first")
+def t_d2(legit, sock):
+    msg_id = next_msg_id()
+    frags = make_fragments(honest_packet(legit), msg_id)
+    rsu.process_fragment(frags[0], LEGIT_ADDR, sock=sock, rsu_id=RSU_ID)
+    for i in range(150):
+        rsu.process_fragment(struct.pack('!BBH', 2, 5, 30000 + i) + b"x" * 8,
+                             (f"172.16.{i // 200}.{i % 200 + 1}", 50000 + i), sock=sock, rsu_id=RSU_ID)
+    pool = len(rsu.reassemble_buffer)
+    r = deliver(frags[1:], LEGIT_ADDR, sock)
+    return r["green"] and pool <= rsu.MAX_SESSIONS, f"pool={pool}; legit green={r['green']}", True
+
+
+@case("D3", "DoS (rate-limit abuse)", "attacker spoofs AMB-217's IP and sends 80 junk fragments between F1 and the tail",
+      "source-IP rate limit applies to F1 only")
+def t_d3(legit, sock):
+    msg_id = next_msg_id()
+    frags = make_fragments(honest_packet(legit), msg_id)
+    rsu.process_fragment(frags[0], LEGIT_ADDR, sock=sock, rsu_id=RSU_ID)
+    for i in range(80):
+        rsu.process_fragment(struct.pack('!BBH', 2, 5, 40000 + i) + b"j" * 8, (LEGIT_ADDR[0], 1000 + i),
+                             sock=sock, rsu_id=RSU_ID)
+    r = deliver(frags[1:], LEGIT_ADDR, sock)
+    return r["green"], f"legit green after IP-spoof flood={r['green']}", True
+
+
+@case("D4", "DoS (pre-F1 overwrite)", "primary F1 lost; tail arrives first and attacker re-sends 3 forged copies of "
+      "each tail fragment before the backup F1", "pre-F1 candidates per slot, first arrival always kept")
+def t_d4(legit, sock):
+    msg_id = next_msg_id()
+    frags = make_fragments(honest_packet(legit), msg_id)
+    for f in frags[1:]:
+        rsu.process_fragment(f, LEGIT_ADDR, sock=sock, rsu_id=RSU_ID)
+        for _ in range(3):
+            rsu.process_fragment(f[:4] + os.urandom(len(f) - 4), LEGIT_ADDR, sock=sock, rsu_id=RSU_ID)
+    r = deliver(frags[:1], LEGIT_ADDR, sock)
+    return r["green"], f"legit green with backup F1={r['green']}", True
 
 
 @case("S1", "forged downlink", "attacker sends unsigned / self-signed SSM status=6 to force Full fallback",

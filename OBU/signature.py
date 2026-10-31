@@ -3,10 +3,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 
 import oqs, struct
+import pki
 
 # 生成PQC簽章
 def gen_dilithium(message):
-    sig_name = "ML-DSA-44" # 選擇 Dilithium 模組，這裡使用 ML-DSA-44
+    sig_name = pki.pqc_alg() # 預設 ML-DSA-44 (Dilithium)，可切換 Falcon-512
 
     if type(message) != bytes:
         message = message.encode()  # 確保輸入是 bytes 類型，因為簽章函數需要 bytes 格式的訊息

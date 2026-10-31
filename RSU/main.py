@@ -25,6 +25,7 @@ RSU_PORT = int(os.getenv("RSU_PORT", 5005))
 BUFFER_SIZE = 4096
 PRUNING_TIMEOUT = 0.08 # 80 毫秒（配合 150ms 端到端延遲）
 SOCKET_TIMEOUT = 0.01   # 10 毫秒輪詢週期，Non-blocking
+PRUNE_INTERVAL = 0.005  # 逾時清理最短間隔 (秒)；原本每收一包就掃描整個暫存池，洪水攻擊下 CPU 大量耗在清理
 
 # ─── 下游拓樸鄰居表（Topology Lookup Table） ──────────────────────────────────
 # 定義幹道路口有向圖：{當前路口ID: {方向/進口道: [下游RSU清單], "default": [下游RSU清單]}}
@@ -34,6 +35,26 @@ DOWNSTREAM_TOPOLOGY = {
     3: {"eastbound": [4], "default": [4]},
     4: {"default": []}
 }
+
+# 路口間行車距離 (公尺)，用於估計車輛抵達下游路口的時間與預熱快取有效期 (TTL)
+DOWNSTREAM_DISTANCE_M = {(1, 2): 300.0, (1, 3): 600.0, (2, 3): 300.0, (3, 4): 300.0}
+DEFAULT_SEGMENT_M     = 300.0   # 未列於上表時採用
+PREWARM_GRACE_S       = 30.0    # TTL 額外寬限 (秒)
+PREWARM_SLOWDOWN      = 2.0     # 允許車輛平均速度降為 SRM 車速的 1/2 (壅塞、減速通過路口)
+# 【修正】原本 ETA 一律以 300 公尺估算 (TTL = 300m / 車速 + 30s)，與實際路口間距無關：
+# 間距較大 (例如 900 公尺、60 km/h 需 54 秒) 時，車輛抵達前快取就已過期 → Short 封包被回 status=6 再補 Full，
+# 而 OBU 端白名單固定 60 秒，兩邊的有效期也不一致。現改為依實際距離估算，並在 SSM 夾帶 TTL 讓 OBU 同步。
+PREWARM_LEGACY_TTL    = False   # True = 舊公式 (僅供實驗對照)
+LAST_PREWARM_TTL      = {}      # 最近一次預熱：{下游路口: TTL 秒}
+
+def prewarm_ttl(current_id: int, target_id: int, speed_mps: float) -> float:
+    """預熱快取有效期 (秒)。"""
+    if PREWARM_LEGACY_TTL:
+        eta = 300.0 / speed_mps if speed_mps > 2.0 else 18.0
+        return eta + 30.0
+    dist = DOWNSTREAM_DISTANCE_M.get((current_id, target_id), DEFAULT_SEGMENT_M)
+    speed = speed_mps if speed_mps > 2.0 else 300.0 / 18.0     # 車速未知時以 60 km/h 估算
+    return dist / speed * PREWARM_SLOWDOWN + PREWARM_GRACE_S
 
 def get_downstream_rsus(current_id: int, srm_data: dict = None) -> list:
     """根據拓樸圖與車輛 SRM 行駛資訊查出下游路口清單"""
@@ -54,27 +75,25 @@ def trigger_inter_rsu_prewarm(current_rsu_id: int, obu_id_raw: bytes, P_U_bytes:
     if not downstream_ids:
         return []
 
-    # 計算預估抵達時間 (ETA) 與快取過期時間 (TTL)
-    # 預設行駛 300 公尺 / 速度 60km/h (16.6m/s) ≈ 18 秒後抵達
-    eta = 18.0
+    # 依 SRM 車速與路口間距估計抵達時間，計算各下游路口的快取有效期 (見 prewarm_ttl)
+    speed_mps = 0.0
     if srm_data:
         pos = srm_data.get("requestor", {}).get("position", {})
-        speed_raw = pos.get("speed", {}).get("speed", 0)
-        speed_mps = speed_raw * 0.02
-        if speed_mps > 2.0:
-            eta = 300.0 / speed_mps
+        speed_mps = pos.get("speed", {}).get("speed", 0) * 0.02
 
-    expire_at = time.time() + eta + 30.0  # 給予 30 秒寬限期
     prewarmed_list = []
-
+    LAST_PREWARM_TTL.clear()
     for target_id in downstream_ids:
+        ttl = prewarm_ttl(current_rsu_id, target_id, speed_mps)
+        expire_at = time.time() + ttl
+        LAST_PREWARM_TTL[target_id] = ttl
         if rsu_cluster and target_id in rsu_cluster:
             target_rsu = rsu_cluster[target_id]
             target_rsu.inject_prewarm(obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at, role=role)
         else:
             parse.inject_prewarm_cache(target_id, obu_id_raw, P_U_bytes, vk_ecc, obu_pqc_pub, expire_at, role=role)
         prewarmed_list.append(target_id)
-        print(f"  [有線骨幹預同步] 已將已驗證金鑰 (Q_U, PK_PQC) 推送至下游路口 {target_id} (TTL: {eta+30:.0f}s)")
+        print(f"  [有線骨幹預同步] 已將已驗證金鑰 (Q_U, PK_PQC) 推送至下游路口 {target_id} (TTL: {ttl:.0f}s)")
 
     return prewarmed_list
 
@@ -89,6 +108,16 @@ OBU_F1_MAX_RATE          = 10       # 單一合法 OBU 每秒最高允許 10 次
 OBU_F1_MAX_TRACKED       = 500      # OBU 限流字典上限
 
 XOR_MAX_PARITY_CANDIDATES = 3       # 每個 XOR 會話最多保留的 FP 候選數 (FP 無雜湊承諾，需容納偽造 FP)
+
+MAX_SESSIONS             = 100      # 重組暫存池上限 (多車並發會話數；每會話約 7KB，全滿約 0.7MB RAM)
+# 【修正】暫存池滿時優先淘汰「尚未通過 F1 認證」的會話。原本一律淘汰最早建立的會話，
+# 攻擊者以大量偽造來源灌入只有 F2 的假會話，就能把已閃黃燈、正在收後續分片的救護車會話擠出暫存池。
+EVICT_UNAUTHENTICATED_FIRST = True
+PRE_F1_SLOT_CANDIDATES   = 3        # F1 抵達前每個序號最多暫存的候選分片數 (尚無雜湊承諾可篩選)
+# 【修正】來源 IP 限流只套用在 F1 (唯一需要 ECC 驗簽的分片)。無線網路可偽造來源位址，攻擊者冒用救護車 IP
+# 狂送垃圾後續分片，原本會耗盡救護車自己的限流額度，使其合法分片被丟棄；後續分片只做雜湊比對，
+# 記憶體由 MAX_SESSIONS 與 PRE_F1_SLOT_CANDIDATES 限制，不需靠 IP 限流保護。
+RATE_LIMIT_F1_ONLY = True
 
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -327,7 +356,8 @@ def _finalize_session(session_key, session, packet, addr, sock, rsu_id=None):
                     request_id=req_num,
                     status=4,
                     sequence_number=payload.get("sequenceNumber", 1),
-                    prewarmed_rsus=prewarmed_rsus
+                    prewarmed_rsus=prewarmed_rsus,
+                    prewarm_ttl_s=[round(LAST_PREWARM_TTL.get(r, 0.0), 1) for r in prewarmed_rsus] or None
                 )
                 ssm_bytes = send_signed_ssm(sock, ssm_payload, addr, current_rsu)
                 print(f"  -> 已向車輛 {req_id} 回傳已簽章 SAE J2735 SSM 放行回條 (ACK, {len(ssm_bytes)} bytes)")
@@ -454,15 +484,44 @@ def _try_xor_recovery(session_key, session, addr, sock, rsu_id=None):
             return
 
 
+def _evict_one_session():
+    """暫存池已滿時淘汰一個會話 (見 EVICT_UNAUTHENTICATED_FIRST)。"""
+    if EVICT_UNAUTHENTICATED_FIRST:
+        # dict 依插入順序 = 建立先後；由舊到新找第一個未認證會話，通常第一筆即是 (O(1))
+        victim = next((k for k, s in reassemble_buffer.items() if s.get("obu_id") is None),
+                      next(iter(reassemble_buffer)))
+    else:
+        victim = min(reassemble_buffer, key=lambda k: reassemble_buffer[k]["created_at"])
+    obu_id = reassemble_buffer[victim].get("obu_id")
+    del reassemble_buffer[victim]
+    if obu_id and id_active_session.get(obu_id) == victim:
+        del id_active_session[obu_id]
+        id_session_meta.pop(obu_id, None)
+
+
+def _stash_pre_f1(session, seq_num, chunk_bytes):
+    """
+    F1 抵達前的後續分片：尚無雜湊承諾可驗證，每個序號保留最多 PRE_F1_SLOT_CANDIDATES 個不同候選 (先進先出)，
+    F1 抵達後再依承諾挑出正確者。
+    【修正】原本同一序號只保留最後到達的一片，攻擊者在合法分片之後補送一片假分片即可覆蓋，
+    F1 抵達時雜湊不符被清除 → 合法分片已遺失，整則訊息作廢。
+    """
+    cands = session["pre_f1"].setdefault(seq_num, [])
+    if chunk_bytes not in cands:
+        cands.append(chunk_bytes)
+        if len(cands) > PRE_F1_SLOT_CANDIDATES:
+            # 保留最先到達的一片與最新的幾片：攻擊者在合法分片之後狂送假分片擠不掉最先到的合法分片，
+            # 搶先送假分片時合法分片則留在「最新」區段
+            cands.pop(1 if PRE_F1_SLOT_CANDIDATES > 1 else 0)
+    if seq_num <= len(session["fragments"]):
+        session["fragments"][seq_num - 1] = chunk_bytes
+
+
+
 # 處理收到的分片
 def process_fragment(data, addr, sock=None, rsu_id=None):
     current_rsu = rsu_id if rsu_id is not None else RSU_ID
     now = time.time()
-
-    # 1. 來源 IP 軟限流 (以 IP 為鍵，上限 1000 筆 LRU，防止換 port 攻擊與記憶體耗盡)
-    ip_str = addr[0]
-    if not check_ip_rate_limit(ip_str, now):
-        return  # 單一來源 IP 超過限流閾值，靜默丟棄
 
     header_bytes = data[:4]
     chunk_bytes  = data[4:]
@@ -471,18 +530,25 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
     if seq_num is None:
         print(f"[來自 {addr}] 收到無效的 header")
         return
+    if total_frags == 0:
+        return  # 非法分片數
 
     session_key = (msg_id, addr)
+
+    # 1. 來源 IP 軟限流 (以 IP 為鍵，上限 1000 筆 LRU，防止換 port 攻擊)；見 RATE_LIMIT_F1_ONLY
+    ip_str = addr[0]
+    if seq_num == 1 or not RATE_LIMIT_F1_ONLY:
+        if not check_ip_rate_limit(ip_str, now):
+            return  # 單一來源 IP 超過限流閾值，靜默丟棄
 
     # 若該訊息剛重組完成，忽略後續抵達的重複分片 (如尾巴備用 F1)
     if session_key in recent_completed:
         return
 
-    # 多車暫存池上限保護 (上限 100 台並發車輛，約 400KB 記憶體)
+    # 多車暫存池上限保護 (上限 MAX_SESSIONS 台並發車輛)
     if session_key not in reassemble_buffer:
-        if len(reassemble_buffer) >= 100:
-            oldest_key = min(reassemble_buffer.keys(), key=lambda k: reassemble_buffer[k]["created_at"])
-            del reassemble_buffer[oldest_key]
+        if len(reassemble_buffer) >= MAX_SESSIONS:
+            _evict_one_session()
 
         reassemble_buffer[session_key] = {
             "state"            : "WAITING_F1",
@@ -495,6 +561,7 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
             "created_at"       : now,
             "obu_id"           : None,   # DUP/XOR 模式 F1 驗證後填入
             "f1_timestamp"     : 0.0,
+            "pre_f1"           : {},     # F1 抵達前的候選分片 {seq: [chunk, ...]}
         }
     session = reassemble_buffer[session_key]
     # 若後續分片帶有 XOR 旗標，補充標記（應對 parity 先到的情況）
@@ -566,6 +633,12 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
                         if existing_key in reassemble_buffer:
                             del reassemble_buffer[existing_key]
 
+                # 【修正】分片總數以通過認證的 F1 為準。會話可能由先到的偽造分片建立 (分片數由攻擊者決定)，
+                # 原本沿用該長度，F1 回溯檢查時 IndexError → receive_data 未攔截例外，單一封包即可讓 RSU 停機。
+                if session["total_frags"] != total_frags or len(session["fragments"]) != total_frags:
+                    session["total_frags"] = total_frags
+                    session["fragments"]   = [None] * total_frags
+                session["mode"]           = "xor" if is_xor else None
                 session["start_time"]     = now
                 session["state"]          = "REASSEMBLING"
                 session["expected_hashes"]= exp_hashes
@@ -576,16 +649,20 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
                 id_session_meta[obu_id_str] = {"msg_id": msg_id, "f1_timestamp": f1_ts}
                 print(f"[來自 {addr}] 車輛 {obu_id_str} F1 ECC 驗證通過，進入預備放行 (閃黃燈)，啟動 {PRUNING_TIMEOUT*1000:.0f}ms 計時器")
 
-                # 【UDP 亂序自癒】：回溯檢查在 F1 之前就先到達並暫存的後續分片
+                # 【UDP 亂序自癒】：回溯檢查在 F1 之前就先到達並暫存的後續分片，從候選中挑出吻合承諾者
                 import hashlib
+                pre_f1 = session.pop("pre_f1", {})
                 for s_idx in range(1, total_frags):
-                    frag_data = session["fragments"][s_idx]
-                    if frag_data is not None and s_idx + 1 in exp_hashes:
-                        calc_h = hashlib.sha256(frag_data).digest()
-                        if calc_h != exp_hashes[s_idx + 1]:
-                            # 認證前雜湊不符：丟棄偽造分片，不封鎖 obu_id (避免攻擊者隨意注入偽造分片使救護車被鎖)
-                            print(f"[防 DoS 注入攔截] 暫存之分片 {s_idx+1} 雜湊不符！丟棄偽造分片！")
-                            session["fragments"][s_idx] = None
+                    want  = exp_hashes.get(s_idx + 1)
+                    cands = list(pre_f1.get(s_idx + 1, []))
+                    if session["fragments"][s_idx] is not None and session["fragments"][s_idx] not in cands:
+                        cands.append(session["fragments"][s_idx])
+                    match = next((c for c in cands if want is not None and hashlib.sha256(c).digest() == want), None)
+                    if cands and match is None:
+                        # 認證前雜湊不符：丟棄偽造分片，不封鎖 obu_id (避免攻擊者隨意注入偽造分片使救護車被鎖)
+                        print(f"[防 DoS 注入攔截] 暫存之分片 {s_idx+1} 雜湊不符！丟棄偽造分片！")
+                    session["fragments"][s_idx] = match
+                session["pre_f1"] = {}
 
                 # 若為 XOR 模式，嘗試重組（應對 FP/後續片先到的情況）
                 if session["mode"] == "xor":
@@ -611,6 +688,17 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
     else:
         if seq_num < 1 or seq_num > total_frags:
             return  # 非法序號，忽略
+
+        if session["expected_hashes"] is None:
+            # F1 尚未抵達：暫存為候選，等待 F1 的雜湊承諾篩選
+            _stash_pre_f1(session, seq_num, chunk_bytes)
+            if session["start_time"] is None:
+                session["start_time"] = time.time()   # 80ms 計時同樣適用；狀態維持 WAITING_F1 直到 F1 通過認證
+            print(f"[來自 {addr}] 收到ID為 {msg_id} 的分片 ({seq_num}/{total_frags})，F1 未到，暫存待驗。")
+            return
+
+        if total_frags != session["total_frags"]:
+            return  # 與已認證 F1 宣告的分片數不符，丟棄
 
         # 【即時防 DoS 注入攔截 (Early-Drop)】
         if session["expected_hashes"] is not None:
@@ -642,6 +730,7 @@ def process_fragment(data, addr, sock=None, rsu_id=None):
 
 def receive_data(sock):
     sock.settimeout(SOCKET_TIMEOUT)  # 設定 Non-blocking 輪詢超時
+    last_prune = 0.0
     try:
         while True:
             try:
@@ -649,8 +738,13 @@ def receive_data(sock):
                 process_fragment(data, addr, sock=sock)
             except socket.timeout:
                 pass  # 正常超時，繼續執行
-            # 檢查是否有超時分片需要清理
-            prune_expired_sessions()
+            except Exception as e:
+                # 【修正】任何單一封包觸發的例外都不可讓 RSU 主迴圈停機 (原本未攔截，畸形封包即可 DoS)
+                print(f"[錯誤] 處理封包時發生例外，已丟棄該封包：{type(e).__name__}: {e}")
+            # 檢查是否有超時分片需要清理 (最多每 PRUNE_INTERVAL 一次)
+            if time.time() - last_prune >= PRUNE_INTERVAL:
+                prune_expired_sessions()
+                last_prune = time.time()
 
     except KeyboardInterrupt:
         print("\nRSU 已手動關閉")

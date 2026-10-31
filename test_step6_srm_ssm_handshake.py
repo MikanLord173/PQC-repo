@@ -1,6 +1,6 @@
 import os, sys, time, struct, json, hashlib, subprocess
 from OBU.setup import setup
-from OBU.gen_payload import generate_srm_payload
+from OBU.gen_payload import generate_srm_payload, format_temporary_id
 from OBU.encode_packet import gen_packet
 from OBU.fragment import make_fragments
 from RSU.gen_payload import generate_ssm_payload
@@ -86,7 +86,8 @@ def run_test():
     ssm_resp = json.loads(sent_data.decode('utf-8'))
     assert ssm_resp["msgID"] == 30, "【失敗】回條 msgID 應為 30 (SSM)！"
     ack_entity = ssm_resp["status"][0]["sigStatus"][0]["requester"]["id"]["entityID"]
-    assert ack_entity == obu_test_id, "【失敗】SSM 回條對象車輛 ID 不符！"
+    # SSM 依 SAE J2735 以 4 bytes 的 TemporaryID 標示車輛 (OBU.main 同時接受完整 ID 與 TemporaryID)
+    assert ack_entity in (obu_test_id, format_temporary_id(obu_test_id)), "【失敗】SSM 回條對象車輛 ID 不符！"
     assert ssm_resp["status"][0]["sigStatus"][0]["status"] == 4, "【失敗】號誌未授予放行 (granted)！"
     print(f"  -> [PASS] RSU 成功完成雙簽驗證，並精準射出 {len(sent_data)} Bytes 之 SSM 綠燈核准回條！")
 

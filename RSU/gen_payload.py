@@ -1,7 +1,8 @@
 import time, random, json
 from OBU.gen_payload import format_temporary_id
 
-def generate_ssm_payload(obu_id, intersection_id=1, approach_id=1, request_id=1, status=4, sim_time=None, sequence_number=1, prewarmed_rsus=None):
+def generate_ssm_payload(obu_id, intersection_id=1, approach_id=1, request_id=1, status=4, sim_time=None, sequence_number=1, prewarmed_rsus=None,
+                         prewarm_ttl_s=None):
     """
     產生符合 SAE J2735 SEP2024 (Section 5.28) 的精簡號誌狀態訊息 (Signal Status Message, SSM, msgID=30)
     作為路口 RSU 回應緊急車輛 SRM 優先號誌請求之回條 (ACK)。
@@ -16,6 +17,7 @@ def generate_ssm_payload(obu_id, intersection_id=1, approach_id=1, request_id=1,
       - sim_time: 模擬時間注入 (Veins / OMNeT++)
       - sequence_number: 回填 Echo 車輛在 SRM 請求中所附帶的序號 (DE_MsgCount, 0..127)
       - prewarmed_rsus: 有線骨幹預熱完成之下游路口清單 (例如: [2, 3])
+      - prewarm_ttl_s: 與 prewarmed_rsus 對應的預熱快取有效期 (秒)，OBU 以此決定白名單到期時間
     """
     now = sim_time if sim_time is not None else time.time()
     dsecond = int((now % 60) * 1000)
@@ -46,6 +48,8 @@ def generate_ssm_payload(obu_id, intersection_id=1, approach_id=1, request_id=1,
     }
     if prewarmed_rsus:
         ssm_data["prewarmed_rsus"] = prewarmed_rsus
+        if prewarm_ttl_s:
+            ssm_data["prewarm_ttl_s"] = prewarm_ttl_s
     return ssm_data
 
 def extract_pure_j2735_message(payload_data):
@@ -54,7 +58,7 @@ def extract_pure_j2735_message(payload_data):
     還原為純粹符合 SAE J2735 標準定義之訊息本體 (如 SignalStatusMessage)。
     以確保能直接傳入嚴格之 ASN.1 UPER 編碼器。
     """
-    return {k: v for k, v in payload_data.items() if k not in ("msgID", "full_timestamp", "prewarmed_rsus")}
+    return {k: v for k, v in payload_data.items() if k not in ("msgID", "full_timestamp", "prewarmed_rsus", "prewarm_ttl_s")}
 
 def to_message_frame(payload_data):
     """

@@ -133,9 +133,14 @@ def run_test():
     session_key_4 = (msg_id_4, addr)
 
     # 合法 F1 到達，RSU 依據 F1 提取承諾雜湊，比對發現先前收到的 F2 是假的！
+    # 只丟棄偽造分片、保留會話：若整個會話作廢，攻擊者只要搶先送一片假 F2 就能讓救護車這則訊息失效。
     process_fragment(frags_4[0], addr)
-    assert session_key_4 not in reassemble_buffer, "【失敗】F1 抓出先前暫存的偽造 F2 後，應立即抹除整個會話！"
-    print("  -> [PASS] 回溯比對成功抓出惡意 F2，瞬間抹除會話，抵禦暫存池污染攻擊！")
+    assert session_key_4 in reassemble_buffer, "【失敗】偽造 F2 不應使合法會話作廢！"
+    assert reassemble_buffer[session_key_4]["fragments"][1] is None, "【失敗】偽造 F2 應被丟棄！"
+    for frag in frags_4[1:]:
+        process_fragment(frag, addr)
+    assert session_key_4 in recent_completed, "【失敗】補上合法 F2 後應完成重組！"
+    print("  -> [PASS] 回溯比對抓出惡意 F2 並丟棄，合法分片補上後仍成功放行，抵禦暫存池污染攻擊！")
 
     # -------------------------------------------------------------
     # 測試 5: 多車暫存池上限保護 (LRU 淘汰機制防止記憶體耗竭)
@@ -148,7 +153,7 @@ def run_test():
     # 模擬 105 輛車或攻擊者併發傳送未收齊之分片
     for i in range(105):
         sim_msg_id = 1000 + i
-        sim_addr = ("192.168.1.100", 10000 + i)
+        sim_addr = (f"192.168.{i // 250}.{i % 250 + 1}", 10000 + i)   # 每輛車不同來源 IP (同一 IP 會先被每秒 50 包限流擋下)
         # 每輛車只丟一片 F2 (不全)
         fake_header = struct.pack('!BBH', 2, 3, sim_msg_id)
         process_fragment(fake_header + b"fake_data_chunk", sim_addr)
@@ -163,7 +168,7 @@ def run_test():
     print("  1. 循序正常重組 : 通過")
     print("  2. 即時 0.5μs Early-Drop : 通過 (無 PQC 驗簽浪費)")
     print("  3. UDP 亂序自癒重組 : 通過")
-    print("  4. 亂序惡意注入回溯抹除 : 通過")
+    print("  4. 亂序惡意注入回溯丟棄 : 通過")
     print("  5. 多車 LRU 記憶體防禦 (100槽) : 通過")
     print("=" * 65)
 

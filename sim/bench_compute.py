@@ -24,6 +24,7 @@
 import argparse, contextlib, csv, gc, hashlib, io, json, os, platform, struct, sys, time
 from ctypes import create_string_buffer
 
+import pki
 from sim.trip_sim import _next_run_dir, _git_commit
 
 OBU_ID   = "AMB-217"
@@ -95,9 +96,9 @@ def run(n):
     P_U_bytes, role, pqc_pub, _ = load_cert(OBU_ID)
     pqc_hash  = hashlib.sha256(pqc_pub).digest()
 
-    signer = oqs.Signature("ML-DSA-44")
+    signer = oqs.Signature(pki.pqc_alg())
     signer.secret_key = create_string_buffer(pqc_priv, len(pqc_priv))
-    verifier = oqs.Signature("ML-DSA-44")
+    verifier = oqs.Signature(pki.pqc_alg())
 
     message  = json.dumps(generate_srm_payload(OBU_ID, intersection_id=RSU_ID), separators=(',', ':')).encode()
     ecc_sig  = ecc_sk.sign(message, hashfunc=hashlib.sha256)
@@ -126,7 +127,11 @@ def run(n):
 
     items = []
 
+    alg = pki.pqc_alg()
+
     def add(group, code, desc, category, samples, inner=1):
+        # 項目代碼固定 (跨演算法比對用)，說明文字改寫為實際使用的後量子演算法與公鑰長度
+        desc = desc.replace("ML-DSA-44", alg).replace("1312B", f"{len(pqc_pub)}B")
         items.append({"group": group, "code": code, "desc": desc, "category": category,
                       "inner": inner, "samples": samples})
         print(f"  [{group:>2}] {code:<40} mean {sum(samples) / len(samples):9.4f} ms", file=sys.stderr)
@@ -162,7 +167,7 @@ def run(n):
     add(2, "obu_signing_key_from_d_u", "OBU SigningKey.from_secret_exponent(d_U) (setup step 5)", "overlooked",
         measure(n, lambda: SigningKey.from_secret_exponent(d_U, curve=NIST256p)))
     add(2, "obu_mldsa_keygen", "OBU ML-DSA-44 keypair generation (setup, one-time)", "overlooked",
-        measure(n, lambda: oqs.Signature("ML-DSA-44").generate_keypair()))
+        measure(n, lambda: oqs.Signature(pki.pqc_alg()).generate_keypair()))
 
     # ── 3. 雙層雜湊 e：預雜湊 (73B) vs 直接串接 1312B 公鑰 (1353B) ─────────────
     INNER = 200
@@ -208,7 +213,7 @@ def run(n):
         measure(n, lambda: verifier.verify(message, pqc_sig, pqc_pub)))
 
     def mldsa_ctx():
-        with oqs.Signature("ML-DSA-44"):
+        with oqs.Signature(pki.pqc_alg()):
             pass
     add(5, "rsu_oqs_context_create", "oqs.Signature('ML-DSA-44') construct + free (done per verify in parse_packet)",
         "overlooked", measure(n, mldsa_ctx))
@@ -317,7 +322,7 @@ def run(n):
 
     # ── 11. ML-DSA-44 驗簽：Full 與 Short 分開 ─────────────────────────────────
     def mldsa_with_ctx(pk):
-        with oqs.Signature("ML-DSA-44") as v:
+        with oqs.Signature(pki.pqc_alg()) as v:
             v.verify(message, pqc_sig, pk)
     pk_off = pkt_full.find(pqc_pub)
     assert pk_off > 0, "Full 封包中找不到 PQC 公鑰"
@@ -448,6 +453,7 @@ def main():
         "machine": platform.machine(), "processor": platform.processor(),
         "liboqs_python": getattr(oqs, "__version__", ""), "liboqs": oqs.oqs_version() if hasattr(oqs, "oqs_version") else "",
         "ecdsa": ecdsa.__version__, "cryptography": cryptography.__version__,
+        "pqc_alg": pki.pqc_alg(),
     }
     with open(os.path.join(out, "params.json"), "w", encoding="utf-8") as f:
         json.dump(params, f, ensure_ascii=False, indent=2)

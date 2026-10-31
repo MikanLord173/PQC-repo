@@ -5,6 +5,7 @@ import oqs
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
 from ctypes import create_string_buffer
+import pki
 
 # | ID (8 bytes) | Expiry (8 bytes) | ECC公鑰長度 (1 byte) | PQC公鑰長度 (2 bytes) | ECC公鑰 (variable) | PQC公鑰 (variable) | ECC簽章長度 (1 byte) | PQC簽章長度 (2 bytes) | ECC簽章 (variable) | PQC簽章 (variable) |
 def issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub):
@@ -20,7 +21,7 @@ def issue_obu_certificate(obu_id, obu_ecc_pub, obu_pqc_pub):
         with open("CA/keys/ca_ecc_priv.key", "rb") as f:
             ca_ecc_priv = serialization.load_der_private_key(f.read(), password=None)
         ca_ecc_sig = ca_ecc_priv.sign(tbs_content, ec.ECDSA(hashes.SHA256()))
-        with oqs.Signature("ML-DSA-44") as signer:
+        with oqs.Signature(pki.pqc_alg()) as signer:
             with open("CA/keys/ca_pqc_priv.key", "rb") as f:
                 ca_pqc_priv = f.read() 
             signer.secret_key = create_string_buffer(ca_pqc_priv, len(ca_pqc_priv))  # 導入私鑰

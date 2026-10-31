@@ -78,7 +78,11 @@ def request_cert(ca_ip, ca_port, obu_id_bytes, R_U_bytes, obu_pqc_pub, enroll_ke
         print(f"TCP 連線 CA 失敗：{e}")
         return None
 
-def setup(obu_id="AMB-217"):
+def setup(obu_id="AMB-217", request=None):
+    """
+    request：送出註冊請求的函式 request(obu_id_bytes, R_U_bytes, obu_pqc_pub, enroll_key) → CA 回應 bytes。
+             預設經 TCP 0x57 連線 CA；sim.provision 改為本機直接呼叫 CA.listen.handle_enrollment (離線佈建)。
+    """
     os.makedirs("OBU/keys", exist_ok=True)
     os.makedirs("OBU/cert", exist_ok=True)
     os.makedirs("OBU/json", exist_ok=True)
@@ -102,9 +106,9 @@ def setup(obu_id="AMB-217"):
     print(f"[{obu_id}] 正在產生 ECQV 請求點 R_U (33 bytes)...")
     k_U, R_U_bytes = generate_enrollment_request()
 
-    # 2. 準備 PQC 金鑰 (ML-DSA-44)
-    print(f"[{obu_id}] 正在生成 ML-DSA-44 後量子金鑰對...")
-    obu_pqc = oqs.Signature("ML-DSA-44")
+    # 2. 準備 PQC 金鑰 (預設 ML-DSA-44，見 pki.pqc_alg)
+    print(f"[{obu_id}] 正在生成 {pki.pqc_alg()} 後量子金鑰對...")
+    obu_pqc = oqs.Signature(pki.pqc_alg())
     obu_pqc_pub = obu_pqc.generate_keypair()
     obu_pqc_priv = obu_pqc.export_secret_key()
 
@@ -113,7 +117,10 @@ def setup(obu_id="AMB-217"):
 
     # 3. 向 CA 發送請求
     print(f"[{obu_id}] 正在向 CA ({CA_IP}:{CA_PORT}) 請求 ECQV 憑證...")
-    response = request_cert(CA_IP, CA_PORT, obu_id_bytes, R_U_bytes, obu_pqc_pub, enroll_key)
+    if request is None:
+        response = request_cert(CA_IP, CA_PORT, obu_id_bytes, R_U_bytes, obu_pqc_pub, enroll_key)
+    else:
+        response = request(obu_id_bytes, R_U_bytes, obu_pqc_pub, enroll_key)
 
     if response is None:
         print("憑證請求失敗！請確認 CA 伺服器是否已啟動 (python3 -m CA.listen)")

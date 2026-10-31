@@ -54,6 +54,8 @@ import argparse, contextlib, csv, io, json, math, os, random, statistics, sys
 import time as _real_time
 from concurrent.futures import ProcessPoolExecutor
 
+import pki
+
 ENV_LEVELS    = ("none", "low", "mid", "high")
 LOSS_MODELS   = ("iid", "ge")
 PACKET_TYPES  = ("full", "short")
@@ -646,6 +648,7 @@ def _write_params(args, costs_ms, argv, elapsed_s=None):
         "elapsed_s"  : round(elapsed_s, 1) if elapsed_s is not None else None,
         **{k: v for k, v in vars(args).items() if k not in ("ber", "queue_ms", "costs_ms", "calibrate")},
         "calibrated" : args.calibrate,
+        "pqc_alg"    : pki.pqc_alg(),
         "ber_ref"    : args.ber,
         "queue_ms"   : args.queue_ms,
         "costs_ms"   : {k: round(v, 4) for k, v in costs_ms.items()},

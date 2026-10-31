@@ -25,10 +25,10 @@ def gen_packet(obu_id, intersection_id=1, known_RSU=False):
     payload = generate_srm_payload(obu_id, intersection_id=intersection_id)
     message = json.dumps(payload, separators=(',', ':')).encode('utf-8')
 
-    # 2. 讀取 PQC 私鑰並進行 ML-DSA-44 簽章
+    # 2. 讀取 PQC 私鑰並進行後量子簽章 (預設 ML-DSA-44，見 pki.pqc_alg)
     with open(f"OBU/keys/{obu_id}_pqc_priv.key", "rb") as f:
         pqc_priv = f.read()
-    with oqs.Signature("ML-DSA-44") as signer:
+    with oqs.Signature(pki.pqc_alg()) as signer:
         signer.secret_key = create_string_buffer(pqc_priv, len(pqc_priv))
         pqc_sig = signer.sign(message)
 

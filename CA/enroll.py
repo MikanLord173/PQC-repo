@@ -59,7 +59,7 @@ def ca_process_enrollment(obu_id: bytes, obu_R_U_bytes: bytes, obu_pqc_pub: byte
     # 原設計認為「能簽出有效 ECC 簽章即證明擁有 CA 授權」，此推論只對古典攻擊者成立：
     # 量子攻擊者以 Shor 求得 d_CA 後可自行簽發綁定任意 PQC 公鑰的 ECQV 憑證，兩層簽章都會通過。
     # 此憑證只在 Full 封包夾帶 (+2420B)，RSU 驗證後快取 PQC 公鑰，Short 封包大小不變。
-    with oqs.Signature("ML-DSA-44") as signer:
+    with oqs.Signature(pki.pqc_alg()) as signer:
         with open("CA/keys/ca_pqc_priv.key", "rb") as f:
             ca_pqc_priv = f.read()
         signer.secret_key = create_string_buffer(ca_pqc_priv, len(ca_pqc_priv))

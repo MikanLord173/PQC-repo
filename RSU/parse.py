@@ -5,7 +5,6 @@ import ecdsa.ellipticcurve as ellipticcurve
 from cryptography.hazmat.primitives import serialization
 import pki
 
-PQC_SIG_NAME = "ML-DSA-44"
 
 # 純記憶體 LRU 快取：支援多路口隔離與有線骨幹預同步 TTL
 # 每路口容量上限設為 500 台車 (僅佔用約 150 KB RAM)，徹底消除內存耗竭 DoS
@@ -177,7 +176,7 @@ ECQV_FIELDS_LEN = 8 + 1 + 33 + 32 + 32   # ID | role | P_U | pqc_pub_hash | pqc_
 _CA_PQC_PUB = None
 
 def _ca_pqc_pub():
-    """CA ML-DSA-44 根公鑰 (RSU setup 時取得，原本從未使用)。"""
+    """CA 後量子根公鑰 (RSU setup 時取得，原本從未使用)。"""
     global _CA_PQC_PUB
     if _CA_PQC_PUB is None:
         with open("RSU/keys/ca_pqc_pub.key", "rb") as f:
@@ -200,6 +199,14 @@ def role_authorized(cert_role: int, payload: dict) -> bool:
     """
     claimed = payload.get("requestor", {}).get("type", {}).get("role")
     return cert_role in pki.EMERGENCY_ROLES and claimed == cert_role
+
+def srm_targets_rsu(payload: dict, rsu_id: int) -> bool:
+    """
+    【安全修正 F-8】SRM 請求的目標路口必須是本路口。原本 RSU 不檢查，攻擊者在 150ms 內把救護車發給
+    路口 2 的合法 SRM 轉送 (wormhole) 到路口 1，路口 1 也會放行，讓沒有救護車接近的路口切成緊急綠燈。
+    """
+    reqs = payload.get("requests") or [{}]
+    return reqs[0].get("request", {}).get("id", {}).get("id") == rsu_id
 
 def _get_vk(obu_id_raw, role, P_U_bytes, pqc_pub_hash, rsu_id):
     """優先查快取 (鍵涵蓋 Q_U 全部輸入)，未命中則現場重構 Q_U。回傳 (vk, cache_key)。"""
@@ -263,6 +270,9 @@ def verify_f1_ecc(f1_chunk, rsu_id=1):
         f1_data = json.loads(payload_bytes.decode('utf-8'))
         if not role_authorized(role, f1_data):
             print(f"車輛 {obu_id_str} 憑證角色 {role} 無緊急優先權或與 SRM 宣稱角色不符，拒絕閃黃燈")
+            return False, obu_id_str, None, None, None
+        if not srm_targets_rsu(f1_data, rsu_id):
+            print(f"車輛 {obu_id_str} 的 SRM 目標路口不是本路口 {rsu_id}，疑似轉送攻擊，拒絕閃黃燈")
             return False, obu_id_str, None, None, None
 
         # 檢查時間戳防重放攻擊 (150ms)
@@ -346,6 +356,10 @@ def parse_packet(packet, rsu_id=1):
             LAST_PARSE_STATUS = "ROLE_DENIED"
             print(f"車輛 {obu_id_str} 憑證角色 {role} 無緊急優先權或與 SRM 不符")
             return None
+        if not srm_targets_rsu(payload, rsu_id):
+            LAST_PARSE_STATUS = "WRONG_INTERSECTION"
+            print(f"車輛 {obu_id_str} 的 SRM 目標路口不是本路口 {rsu_id} (F-8)")
+            return None
 
         # 2. 【安全修正 F-1】收到的 PQC 簽章必須是車輛 ECC 簽章所承諾的那一個；
         # 不符代表傳輸途中遭竄改 (無法歸責於車輛)，只丟棄、不封鎖。
@@ -374,7 +388,7 @@ def parse_packet(packet, rsu_id=1):
             # 4. 【安全修正 F-5】驗證 CA 的 ML-DSA-44 後量子憑證 (ID ‖ role ‖ P_U ‖ H(pk_PQC))。
             # ECQV 只靠 ECC，量子攻擊者破解 CA ECC 根金鑰即可綁定任意 PQC 公鑰；
             # 此憑證讓 PQC 公鑰的信任錨回到後量子簽章。
-            with oqs.Signature(PQC_SIG_NAME) as verifier:
+            with oqs.Signature(pki.pqc_alg()) as verifier:
                 tbs = pki.ca_pqc_cert_tbs(obu_id_raw, role, P_U_bytes, pqc_pub_hash)
                 if not verifier.verify(tbs, ca_pqc_cert, _ca_pqc_pub()):
                     LAST_PARSE_STATUS = "CA_CERT_FAIL"
@@ -385,7 +399,7 @@ def parse_packet(packet, rsu_id=1):
             # 因此不在這裡寫入快取；改到所有簽章驗證通過後才寫入 (真正的 Verify-then-Cache)。
 
         # 5. 驗證 OBU 的 PQC 簽章 (ML-DSA-44 抗量子安全)
-        with oqs.Signature(PQC_SIG_NAME) as verifier:
+        with oqs.Signature(pki.pqc_alg()) as verifier:
             if not verifier.verify(payload_bytes, obu_pqc_sig, obu_pqc_pub):
                 if is_short_mode:
                     # Short 模式公鑰來自本地快取，快取若不同步或損毀可能導致失敗，不可斷定為惡意
@@ -414,7 +428,7 @@ def parse_packet(packet, rsu_id=1):
         }
         LAST_PARSE_STATUS = "OK"
 
-        print(f"ECQV + ML-DSA-44 驗證全部通過")
+        print(f"ECQV + {pki.pqc_alg()} 驗證全部通過")
         return payload
 
     except Exception as e:
